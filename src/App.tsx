@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -102,7 +102,7 @@ const STORAGE_KEYS = {
   sidebarMode: 'mylucy_sidebar_mode_v1'
 };
 
-const APP_VERSION = 'v1.2.0';
+const APP_VERSION = 'v1.2.1';
 const PRESET_AMOUNTS = [15000, 25000, 50000, 100000, 250000, 500000];
 const COLOR_PALETTE = ['#4f46e5', '#0ea5e9', '#10b981', '#f97316', '#ec4899', '#8b5cf6', '#eab308', '#ef4444'];
 
@@ -352,9 +352,11 @@ export default function App() {
   }, []);
 
   // Mobile Back Gesture & Browser History API Synchronization (SPA Accessibility & Exit Guard)
-  const isPopStateRef = useRef(false);
+  const activeTabRef = useRef<ActiveTab>(activeTab);
   const isExitingAppRef = useRef(false);
+  const hasUserActivatedGuardRef = useRef(false);
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
+
   const isAnyModalOpen =
     isTxModalOpen ||
     isSmartParseModalOpen ||
@@ -368,54 +370,111 @@ export default function App() {
     isExitModalOpen ||
     Boolean(confirmDialog);
 
+  const isAnyModalOpenRef = useRef(isAnyModalOpen);
   useEffect(() => {
-    if (!window.history.state || !window.history.state.tab) {
-      window.history.replaceState(
-        { tab: 'dashboard', isRootGuard: true },
-        '',
-        `${window.location.pathname}#dashboard`
-      );
+    isAnyModalOpenRef.current = isAnyModalOpen;
+  }, [isAnyModalOpen]);
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  // Arm the root history guard on mount AND reinforce on first user interaction (required by Android Chrome History Intervention)
+  const ensureRootHistoryGuard = useCallback(() => {
+    if (hasUserActivatedGuardRef.current && window.history.state?.mylucy) {
+      return;
+    }
+    hasUserActivatedGuardRef.current = true;
+    const currentTab = activeTabRef.current;
+
+    window.history.replaceState(
+      { mylucy: true, tab: 'dashboard', role: 'root-guard', depth: 0 },
+      '',
+      `${window.location.pathname}#dashboard`
+    );
+    window.history.pushState(
+      { mylucy: true, tab: 'dashboard', role: 'base', depth: 1 },
+      '',
+      `${window.location.pathname}#dashboard`
+    );
+
+    if (currentTab !== 'dashboard') {
       window.history.pushState(
-        { tab: 'dashboard' },
+        { mylucy: true, tab: currentTab, role: 'tab', depth: 2 },
         '',
-        `${window.location.pathname}#dashboard`
+        `${window.location.pathname}#${currentTab}`
       );
     }
   }, []);
 
   useEffect(() => {
-    if (isPopStateRef.current) {
-      isPopStateRef.current = false;
-      return;
-    }
-    if (window.history.state?.tab !== activeTab) {
-      window.history.pushState(
-        { tab: activeTab },
-        '',
-        `${window.location.pathname}#${activeTab}`
-      );
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  }, [activeTab]);
+    // Initialize root guard + base dashboard state on initial load
+    window.history.replaceState(
+      { mylucy: true, tab: 'dashboard', role: 'root-guard', depth: 0 },
+      '',
+      `${window.location.pathname}#dashboard`
+    );
+    window.history.pushState(
+      { mylucy: true, tab: 'dashboard', role: 'base', depth: 1 },
+      '',
+      `${window.location.pathname}#dashboard`
+    );
 
-  useEffect(() => {
-    if (isAnyModalOpen && window.history.state?.modal !== true) {
-      window.history.pushState(
-        { tab: activeTab, modal: true },
-        '',
-        `${window.location.pathname}#${activeTab}`
-      );
-    } else if (!isAnyModalOpen && window.history.state?.modal === true && !isExitingAppRef.current) {
-      window.history.back();
-    }
-  }, [isAnyModalOpen, activeTab]);
+    const handleFirstUserGesture = () => {
+      if (!hasUserActivatedGuardRef.current) {
+        ensureRootHistoryGuard();
+      }
+    };
+
+    window.addEventListener('pointerdown', handleFirstUserGesture, { once: true, passive: true });
+    window.addEventListener('keydown', handleFirstUserGesture, { once: true, passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', handleFirstUserGesture);
+      window.removeEventListener('keydown', handleFirstUserGesture);
+    };
+  }, [ensureRootHistoryGuard]);
+
+  // Synchronous tab navigation helper called directly inside button click handlers
+  const navigateToTab = useCallback(
+    (nextTab: ActiveTab) => {
+      ensureRootHistoryGuard();
+      const prevTab = activeTabRef.current;
+
+      if (prevTab === nextTab) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+
+      activeTabRef.current = nextTab;
+      setActiveTab(nextTab);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      const currentDepth =
+        typeof window.history.state?.depth === 'number' ? window.history.state.depth : 1;
+
+      if (nextTab === 'dashboard') {
+        window.history.pushState(
+          { mylucy: true, tab: 'dashboard', role: 'base', depth: currentDepth + 1 },
+          '',
+          `${window.location.pathname}#dashboard`
+        );
+      } else {
+        window.history.pushState(
+          { mylucy: true, tab: nextTab, role: 'tab', depth: currentDepth + 1 },
+          '',
+          `${window.location.pathname}#${nextTab}`
+        );
+      }
+    },
+    [ensureRootHistoryGuard]
+  );
 
   useEffect(() => {
     const handlePopState = (e: PopStateEvent) => {
       if (isExitingAppRef.current) return;
 
-      if (isAnyModalOpen) {
-        isPopStateRef.current = true;
+      // Priority 1: If any modal is open when popstate fires, close the modal and keep current tab in history
+      if (isAnyModalOpenRef.current) {
         setIsTxModalOpen(false);
         setIsSmartParseModalOpen(false);
         setIsBudgetModalOpen(false);
@@ -427,36 +486,90 @@ export default function App() {
         setIsAiKeyModalOpen(false);
         setIsExitModalOpen(false);
         setConfirmDialog(null);
-        return;
-      }
 
-      // If user swipes back on the root Dashboard view (hitting the root guard), show formal Exit Confirmation Dialog
-      if (e.state?.isRootGuard || !e.state?.tab) {
-        isPopStateRef.current = true;
-        setActiveTab('dashboard');
-        window.history.replaceState(
-          { tab: 'dashboard', isRootGuard: true },
-          '',
-          `${window.location.pathname}#dashboard`
-        );
+        const currentTab = activeTabRef.current;
+        const poppedDepth = typeof e.state?.depth === 'number' ? e.state.depth : 0;
         window.history.pushState(
-          { tab: 'dashboard' },
+          {
+            mylucy: true,
+            tab: currentTab,
+            role: currentTab === 'dashboard' ? 'base' : 'tab',
+            depth: Math.max(poppedDepth + 1, 1)
+          },
           '',
-          `${window.location.pathname}#dashboard`
+          `${window.location.pathname}#${currentTab}`
         );
-        setIsExitModalOpen(true);
         return;
       }
 
-      const prevTab = (e.state?.tab as ActiveTab) || 'dashboard';
-      isPopStateRef.current = true;
-      setActiveTab(prevTab);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // Priority 2: User is on a sub-view (e.g., Kelola Dompet, Budget, Riwayat, Lucy AI, Kategori) -> Return to previous tab or Dashboard
+      if (activeTabRef.current !== 'dashboard') {
+        const targetTab: ActiveTab =
+          e.state?.mylucy &&
+          e.state?.role === 'tab' &&
+          typeof e.state?.tab === 'string' &&
+          e.state.tab !== activeTabRef.current
+            ? (e.state.tab as ActiveTab)
+            : 'dashboard';
+
+        activeTabRef.current = targetTab;
+        setActiveTab(targetTab);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        // Ensure the root guard + base dashboard entry remain intact beneath the current view
+        if (!e.state?.mylucy || e.state?.role === 'root-guard') {
+          window.history.replaceState(
+            { mylucy: true, tab: 'dashboard', role: 'root-guard', depth: 0 },
+            '',
+            `${window.location.pathname}#dashboard`
+          );
+          window.history.pushState(
+            {
+              mylucy: true,
+              tab: targetTab,
+              role: targetTab === 'dashboard' ? 'base' : 'tab',
+              depth: 1
+            },
+            '',
+            `${window.location.pathname}#${targetTab}`
+          );
+        }
+        return;
+      }
+
+      // Priority 3: User is ALREADY on the root Dashboard view and swiped Back -> Show Exit Confirmation Dialog
+      window.history.replaceState(
+        { mylucy: true, tab: 'dashboard', role: 'root-guard', depth: 0 },
+        '',
+        `${window.location.pathname}#dashboard`
+      );
+      window.history.pushState(
+        { mylucy: true, tab: 'dashboard', role: 'base', depth: 1 },
+        '',
+        `${window.location.pathname}#dashboard`
+      );
+      setIsExitModalOpen(true);
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [isAnyModalOpen]);
+  }, []);
+
+  function handleStayInApp() {
+    setIsExitModalOpen(false);
+    if (window.history.state?.role !== 'base') {
+      window.history.replaceState(
+        { mylucy: true, tab: 'dashboard', role: 'root-guard', depth: 0 },
+        '',
+        `${window.location.pathname}#dashboard`
+      );
+      window.history.pushState(
+        { mylucy: true, tab: 'dashboard', role: 'base', depth: 1 },
+        '',
+        `${window.location.pathname}#dashboard`
+      );
+    }
+  }
 
   function handleConfirmExitApp() {
     isExitingAppRef.current = true;
@@ -466,7 +579,19 @@ export default function App() {
     } catch {
       // Ignore if blocked
     }
-    window.history.go(-3);
+    const currentDepth =
+      typeof window.history.state?.depth === 'number' ? window.history.state.depth : 1;
+    const targetDelta = -(currentDepth + 1);
+    if (window.history.length > Math.abs(targetDelta)) {
+      window.history.go(targetDelta);
+    } else if (window.history.length > 1) {
+      window.history.go(-(window.history.length - 1));
+      setTimeout(() => {
+        window.history.back();
+      }, 60);
+    } else {
+      window.history.back();
+    }
   }
 
   // Persist to localStorage (Offline-First queue/cache)
@@ -1791,7 +1916,7 @@ export default function App() {
         <nav className={`flex-1 ${sidebarMode === 'minimized' ? 'px-2.5' : 'px-4'} space-y-1`}>
           <button
             type="button"
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => navigateToTab('dashboard')}
             title="Ringkasan & Grafik"
             className={`w-full flex items-center ${
               sidebarMode === 'minimized' ? 'justify-center p-3' : 'gap-3 px-4 py-2.5'
@@ -1807,7 +1932,7 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() => setActiveTab('transactions')}
+            onClick={() => navigateToTab('transactions')}
             title="Riwayat Transaksi"
             className={`w-full flex items-center ${
               sidebarMode === 'minimized' ? 'justify-center p-3' : 'gap-3 px-4 py-2.5'
@@ -1823,7 +1948,7 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() => setActiveTab('budgets')}
+            onClick={() => navigateToTab('budgets')}
             title={
               totalAlertCount > 0
                 ? `Smart Budgeting (${totalAlertCount} Alert)`
@@ -1853,7 +1978,7 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() => setActiveTab('lucy')}
+            onClick={() => navigateToTab('lucy')}
             title="Lucy AI Advisor"
             className={`relative w-full flex items-center ${
               sidebarMode === 'minimized' ? 'justify-center p-3' : 'justify-between px-4 py-2.5'
@@ -1876,7 +2001,7 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() => setActiveTab('wallets')}
+            onClick={() => navigateToTab('wallets')}
             title="Dompet & Kantong"
             className={`w-full flex items-center ${
               sidebarMode === 'minimized' ? 'justify-center p-3' : 'gap-3 px-4 py-2.5'
@@ -1892,7 +2017,7 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() => setActiveTab('categories')}
+            onClick={() => navigateToTab('categories')}
             title="Kategori Kustom"
             className={`w-full flex items-center ${
               sidebarMode === 'minimized' ? 'justify-center p-3' : 'gap-3 px-4 py-2.5'
@@ -2066,10 +2191,10 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  if (window.history.state?.tab && window.history.length > 1) {
+                  if (window.history.state?.mylucy && window.history.state?.role === 'tab') {
                     window.history.back();
                   } else {
-                    setActiveTab('dashboard');
+                    navigateToTab('dashboard');
                   }
                 }}
                 aria-label="Kembali ke halaman sebelumnya"
@@ -2287,7 +2412,7 @@ export default function App() {
               {activeTab !== 'budgets' && (
                 <button
                   type="button"
-                  onClick={() => setActiveTab('budgets')}
+                  onClick={() => navigateToTab('budgets')}
                   className="shrink-0 rounded-xl bg-amber-600 hover:bg-amber-500 px-3.5 py-2 text-xs font-semibold text-white transition-colors cursor-pointer"
                 >
                   Cek Budget & Cicilan &rarr;
@@ -2357,7 +2482,7 @@ export default function App() {
                 wallets={wallets}
                 walletBalances={walletBalances}
                 totalBalance={totalBalance}
-                onManageWallets={() => setActiveTab('wallets')}
+                onManageWallets={() => navigateToTab('wallets')}
               />
 
               {/* Multi-column Desktop Layout: Interactive Line Chart + Collapsible Category Breakdown & Recent Transactions */}
@@ -2366,7 +2491,7 @@ export default function App() {
                   monthlyTransactions={monthlyTransactions}
                   expenseByCategory={expenseByCategory}
                   savingsRatePct={savingsRatePct}
-                  onOpenBudgets={() => setActiveTab('budgets')}
+                  onOpenBudgets={() => navigateToTab('budgets')}
                 />
 
                 {/* Recent Transactions Card */}
@@ -2381,7 +2506,7 @@ export default function App() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => setActiveTab('transactions')}
+                        onClick={() => navigateToTab('transactions')}
                         className="text-xs font-semibold text-indigo-600 hover:text-indigo-500 cursor-pointer"
                       >
                         Lihat Semua &rarr;
@@ -3502,7 +3627,7 @@ export default function App() {
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-20 bg-white border-t border-slate-200 px-2 py-1.5 flex items-center justify-around">
         <button
           type="button"
-          onClick={() => setActiveTab('dashboard')}
+          onClick={() => navigateToTab('dashboard')}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl text-[11px] font-medium cursor-pointer ${
             activeTab === 'dashboard' ? 'text-indigo-600' : 'text-slate-400'
           }`}
@@ -3513,7 +3638,7 @@ export default function App() {
 
         <button
           type="button"
-          onClick={() => setActiveTab('budgets')}
+          onClick={() => navigateToTab('budgets')}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl text-[11px] font-medium cursor-pointer ${
             activeTab === 'budgets' ? 'text-indigo-600' : 'text-slate-400'
           }`}
@@ -3585,7 +3710,7 @@ export default function App() {
 
         <button
           type="button"
-          onClick={() => setActiveTab('lucy')}
+          onClick={() => navigateToTab('lucy')}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl text-[11px] font-medium cursor-pointer ${
             activeTab === 'lucy' ? 'text-violet-600' : 'text-slate-400'
           }`}
@@ -3596,7 +3721,7 @@ export default function App() {
 
         <button
           type="button"
-          onClick={() => setActiveTab('transactions')}
+          onClick={() => navigateToTab('transactions')}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 rounded-xl text-[11px] font-medium cursor-pointer ${
             activeTab === 'transactions' ? 'text-indigo-600' : 'text-slate-400'
           }`}
@@ -4745,7 +4870,7 @@ export default function App() {
       {/* MODAL 11: KONFIRMASI KELUAR APLIKASI (MOBILE SWIPE-BACK EXIT DIALOG) */}
       <ModalDialog
         isOpen={isExitModalOpen}
-        onClose={() => setIsExitModalOpen(false)}
+        onClose={handleStayInApp}
         closedBy="closerequest"
         title="Keluar dari Aplikasi MyLucy"
       >
@@ -4769,7 +4894,7 @@ export default function App() {
           <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-100">
             <button
               type="button"
-              onClick={() => setIsExitModalOpen(false)}
+              onClick={handleStayInApp}
               className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 py-2.5 px-4 text-xs sm:text-sm font-semibold text-white shadow-sm transition-colors cursor-pointer"
             >
               Tetap di Aplikasi
