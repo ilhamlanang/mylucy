@@ -351,8 +351,10 @@ export default function App() {
     };
   }, []);
 
-  // Mobile Back Gesture & Browser History API Synchronization (SPA Accessibility)
+  // Mobile Back Gesture & Browser History API Synchronization (SPA Accessibility & Exit Guard)
   const isPopStateRef = useRef(false);
+  const isExitingAppRef = useRef(false);
+  const [isExitModalOpen, setIsExitModalOpen] = useState(false);
   const isAnyModalOpen =
     isTxModalOpen ||
     isSmartParseModalOpen ||
@@ -363,11 +365,17 @@ export default function App() {
     isWalletModalOpen ||
     isAuthModalOpen ||
     isAiKeyModalOpen ||
+    isExitModalOpen ||
     Boolean(confirmDialog);
 
   useEffect(() => {
     if (!window.history.state || !window.history.state.tab) {
       window.history.replaceState(
+        { tab: 'dashboard', isRootGuard: true },
+        '',
+        `${window.location.pathname}#dashboard`
+      );
+      window.history.pushState(
         { tab: 'dashboard' },
         '',
         `${window.location.pathname}#dashboard`
@@ -397,13 +405,15 @@ export default function App() {
         '',
         `${window.location.pathname}#${activeTab}`
       );
-    } else if (!isAnyModalOpen && window.history.state?.modal === true) {
+    } else if (!isAnyModalOpen && window.history.state?.modal === true && !isExitingAppRef.current) {
       window.history.back();
     }
   }, [isAnyModalOpen, activeTab]);
 
   useEffect(() => {
     const handlePopState = (e: PopStateEvent) => {
+      if (isExitingAppRef.current) return;
+
       if (isAnyModalOpen) {
         isPopStateRef.current = true;
         setIsTxModalOpen(false);
@@ -415,7 +425,26 @@ export default function App() {
         setIsWalletModalOpen(false);
         setIsAuthModalOpen(false);
         setIsAiKeyModalOpen(false);
+        setIsExitModalOpen(false);
         setConfirmDialog(null);
+        return;
+      }
+
+      // If user swipes back on the root Dashboard view (hitting the root guard), show formal Exit Confirmation Dialog
+      if (e.state?.isRootGuard || !e.state?.tab) {
+        isPopStateRef.current = true;
+        setActiveTab('dashboard');
+        window.history.replaceState(
+          { tab: 'dashboard', isRootGuard: true },
+          '',
+          `${window.location.pathname}#dashboard`
+        );
+        window.history.pushState(
+          { tab: 'dashboard' },
+          '',
+          `${window.location.pathname}#dashboard`
+        );
+        setIsExitModalOpen(true);
         return;
       }
 
@@ -423,19 +452,22 @@ export default function App() {
       isPopStateRef.current = true;
       setActiveTab(prevTab);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-
-      if (!e.state?.tab) {
-        window.history.replaceState(
-          { tab: 'dashboard' },
-          '',
-          `${window.location.pathname}#dashboard`
-        );
-      }
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, [isAnyModalOpen]);
+
+  function handleConfirmExitApp() {
+    isExitingAppRef.current = true;
+    setIsExitModalOpen(false);
+    try {
+      window.close();
+    } catch {
+      // Ignore if blocked
+    }
+    window.history.go(-3);
+  }
 
   // Persist to localStorage (Offline-First queue/cache)
   useEffect(() => {
@@ -4708,6 +4740,50 @@ export default function App() {
             </div>
           </div>
         )}
+      </ModalDialog>
+
+      {/* MODAL 11: KONFIRMASI KELUAR APLIKASI (MOBILE SWIPE-BACK EXIT DIALOG) */}
+      <ModalDialog
+        isOpen={isExitModalOpen}
+        onClose={() => setIsExitModalOpen(false)}
+        closedBy="closerequest"
+        title="Keluar dari Aplikasi MyLucy"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3.5">
+            <img
+              src="/logo.png"
+              alt="MyLucy Logo"
+              className="h-11 w-11 shrink-0 rounded-2xl object-cover shadow-md border border-violet-500/30"
+            />
+            <div className="space-y-1.5">
+              <p className="text-sm font-bold text-slate-900 leading-relaxed">
+                Apakah Anda yakin ingin menutup dan keluar dari aplikasi MyLucy?
+              </p>
+              <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2 leading-relaxed">
+                Seluruh catatan transaksi, saldo dompet, serta pengaturan anggaran Anda telah tersimpan otomatis di perangkat ini.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setIsExitModalOpen(false)}
+              className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 py-2.5 px-4 text-xs sm:text-sm font-semibold text-white shadow-sm transition-colors cursor-pointer"
+            >
+              Tetap di Aplikasi
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmExitApp}
+              className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 py-2.5 px-4 text-xs sm:text-sm font-semibold text-slate-700 transition-colors cursor-pointer"
+            >
+              <LogOut className="h-4 w-4" />
+              Ya, Keluar
+            </button>
+          </div>
+        </div>
       </ModalDialog>
     </div>
   );
