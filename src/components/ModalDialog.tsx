@@ -5,6 +5,7 @@ interface ModalDialogProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
+  closedBy?: 'any' | 'closerequest';
   children: React.ReactNode;
 }
 
@@ -12,6 +13,7 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
   isOpen,
   onClose,
   title,
+  closedBy = 'any',
   children
 }) => {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
@@ -38,6 +40,7 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
     };
 
     const handleBackdropClick = (event: MouseEvent) => {
+      if (closedBy !== 'any') return;
       if ('closedBy' in HTMLDialogElement.prototype) return;
       if (event.target !== dialog) return;
 
@@ -59,12 +62,12 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
       dialog.removeEventListener('close', handleClose);
       dialog.removeEventListener('click', handleBackdropClick);
     };
-  }, [onClose]);
+  }, [onClose, closedBy]);
 
   return (
     <dialog
       ref={dialogRef}
-      closedby="any"
+      closedby={closedBy}
       aria-labelledby={titleId}
       className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-2xl bg-white p-0 text-slate-900 shadow-2xl border border-slate-100 open:animate-in open:fade-in open:zoom-in-95 duration-150"
     >

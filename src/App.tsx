@@ -221,6 +221,13 @@ export default function App() {
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAiKeyModalOpen, setIsAiKeyModalOpen] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    detail?: string;
+    confirmLabel: string;
+    onConfirm: () => void | Promise<void>;
+  } | null>(null);
 
   // Quick Transaction Form state
   const [txType, setTxType] = useState<TransactionType>('expense');
@@ -871,11 +878,25 @@ export default function App() {
     setIsBudgetModalOpen(false);
   }
 
-  async function handleDeleteBudget(budgetId: string) {
-    setBudgets((prev) => prev.filter((b) => b.id !== budgetId));
-    if (supabase && userId && isOnline) {
-      await supabase.from('budgets').delete().eq('id', budgetId);
-    }
+  function handleDeleteBudget(budgetId: string) {
+    const targetBudget = budgets.find((b) => b.id === budgetId);
+    const cat = categories.find((c) => c.id === targetBudget?.category_id);
+    setConfirmDialog({
+      title: 'Konfirmasi Penghapusan Anggaran',
+      message:
+        'Apakah Anda yakin ingin menghapus alokasi anggaran beserta seluruh rincian poin pada kategori ini?',
+      detail: cat
+        ? `Kategori: ${cat.name} (${formatIDR(targetBudget?.amount_limit || 0)})`
+        : undefined,
+      confirmLabel: 'Ya, Hapus Anggaran',
+      onConfirm: async () => {
+        setBudgets((prev) => prev.filter((b) => b.id !== budgetId));
+        if (supabase && userId && isOnline) {
+          await supabase.from('budgets').delete().eq('id', budgetId);
+        }
+        setConfirmDialog(null);
+      }
+    });
   }
 
   function openEditBudgetModal(categoryId: string, currentLimit?: number | null, currentThreshold?: number) {
@@ -1018,27 +1039,38 @@ export default function App() {
     await syncBudgetRecord(updatedBudget);
   }
 
-  async function handleDeleteInlineBudgetItem(categoryId: string, itemId: string) {
+  function handleDeleteInlineBudgetItem(categoryId: string, itemId: string) {
     const existing = budgets.find((b) => b.category_id === categoryId);
     if (!existing || !existing.items) return;
 
     const targetItem = existing.items.find((item) => item.id === itemId);
-    if (targetItem?.linked_tx_id) {
-      const txIdToRemove = targetItem.linked_tx_id;
-      setTransactions((prev) => prev.filter((t) => t.id !== txIdToRemove));
-      if (supabase && userId && isOnline) {
-        await supabase.from('transactions').delete().eq('id', txIdToRemove);
-      }
-    }
+    if (!targetItem) return;
 
-    const nextItems = existing.items.filter((item) => item.id !== itemId);
-    const nextTotal = nextItems.reduce((sum, item) => sum + item.amount, 0);
-    const updatedBudget: Budget = {
-      ...existing,
-      amount_limit: nextItems.length > 0 ? nextTotal : existing.amount_limit,
-      items: nextItems
-    };
-    await syncBudgetRecord(updatedBudget);
+    setConfirmDialog({
+      title: 'Konfirmasi Penghapusan Poin Rincian',
+      message: 'Apakah Anda yakin ingin menghapus poin rincian anggaran ini?',
+      detail: `${targetItem.label} • ${formatIDR(targetItem.amount)}`,
+      confirmLabel: 'Ya, Hapus Poin',
+      onConfirm: async () => {
+        if (targetItem.linked_tx_id) {
+          const txIdToRemove = targetItem.linked_tx_id;
+          setTransactions((prev) => prev.filter((t) => t.id !== txIdToRemove));
+          if (supabase && userId && isOnline) {
+            await supabase.from('transactions').delete().eq('id', txIdToRemove);
+          }
+        }
+
+        const nextItems = existing.items!.filter((item) => item.id !== itemId);
+        const nextTotal = nextItems.reduce((sum, item) => sum + item.amount, 0);
+        const updatedBudget: Budget = {
+          ...existing,
+          amount_limit: nextItems.length > 0 ? nextTotal : existing.amount_limit,
+          items: nextItems
+        };
+        await syncBudgetRecord(updatedBudget);
+        setConfirmDialog(null);
+      }
+    });
   }
 
   // Debt & Receivable Handlers
@@ -1120,13 +1152,26 @@ export default function App() {
     setIsDebtModalOpen(false);
   }
 
-  async function handleDeleteDebt(debtId: string) {
-    setDebts((prev) => prev.filter((d) => d.id !== debtId));
-    if (supabase && userId && isOnline) {
-      await supabase.from('debts').delete().eq('id', debtId);
-    } else if (!isOnline) {
-      enqueueOfflineAction('debts', 'delete', { id: debtId });
-    }
+  function handleDeleteDebt(debtId: string) {
+    const targetDebt = debts.find((d) => d.id === debtId);
+    setConfirmDialog({
+      title: 'Konfirmasi Penghapusan Catatan Komitmen',
+      message:
+        'Apakah Anda yakin ingin menghapus catatan hutang/piutang ini secara permanen dari daftar komitmen?',
+      detail: targetDebt
+        ? `${targetDebt.title} (${targetDebt.counterparty}) • Sisa: ${formatIDR(targetDebt.remaining_amount)}`
+        : undefined,
+      confirmLabel: 'Ya, Hapus Catatan',
+      onConfirm: async () => {
+        setDebts((prev) => prev.filter((d) => d.id !== debtId));
+        if (supabase && userId && isOnline) {
+          await supabase.from('debts').delete().eq('id', debtId);
+        } else if (!isOnline) {
+          enqueueOfflineAction('debts', 'delete', { id: debtId });
+        }
+        setConfirmDialog(null);
+      }
+    });
   }
 
   function openDebtPayModal(debt: DebtItem) {
@@ -1321,13 +1366,40 @@ export default function App() {
     }
   }
 
-  async function handleDeleteTransaction(id: string) {
-    setTransactions((prev) => prev.filter((t) => t.id !== id));
-    if (supabase && userId && isOnline) {
-      await supabase.from('transactions').delete().eq('id', id);
-    } else if (!isOnline) {
-      enqueueOfflineAction('transactions', 'delete', { id });
-    }
+  function handleDeleteTransaction(id: string) {
+    const targetTx = transactions.find((t) => t.id === id);
+    setConfirmDialog({
+      title: 'Konfirmasi Penghapusan Transaksi',
+      message: 'Apakah Anda yakin ingin menghapus catatan transaksi ini secara permanen?',
+      detail: targetTx
+        ? `${targetTx.merchant || targetTx.description} • ${formatIDR(targetTx.amount)}`
+        : undefined,
+      confirmLabel: 'Ya, Hapus Transaksi',
+      onConfirm: async () => {
+        setTransactions((prev) => prev.filter((t) => t.id !== id));
+        // If this transaction was linked to a budget breakdown item, uncheck it cleanly
+        setBudgets((prev) =>
+          prev.map((b) =>
+            b.items?.some((item) => item.linked_tx_id === id)
+              ? {
+                  ...b,
+                  items: b.items.map((item) =>
+                    item.linked_tx_id === id
+                      ? { ...item, is_checked: false, linked_tx_id: null }
+                      : item
+                  )
+                }
+              : b
+          )
+        );
+        if (supabase && userId && isOnline) {
+          await supabase.from('transactions').delete().eq('id', id);
+        } else if (!isOnline) {
+          enqueueOfflineAction('transactions', 'delete', { id });
+        }
+        setConfirmDialog(null);
+      }
+    });
   }
 
   async function handleAddCategory(e: React.FormEvent) {
@@ -1361,11 +1433,21 @@ export default function App() {
     setIsCategoryModalOpen(false);
   }
 
-  async function handleDeleteCategory(id: string) {
-    setCategories((prev) => prev.filter((c) => c.id !== id));
-    if (supabase && userId && isOnline) {
-      await supabase.from('categories').delete().eq('id', id);
-    }
+  function handleDeleteCategory(id: string) {
+    const targetCat = categories.find((c) => c.id === id);
+    setConfirmDialog({
+      title: 'Konfirmasi Penghapusan Kategori',
+      message: 'Apakah Anda yakin ingin menghapus kategori kustom ini?',
+      detail: targetCat ? `Kategori: ${targetCat.name}` : undefined,
+      confirmLabel: 'Ya, Hapus Kategori',
+      onConfirm: async () => {
+        setCategories((prev) => prev.filter((c) => c.id !== id));
+        if (supabase && userId && isOnline) {
+          await supabase.from('categories').delete().eq('id', id);
+        }
+        setConfirmDialog(null);
+      }
+    });
   }
 
   async function handleAddWallet(e: React.FormEvent) {
@@ -1391,12 +1473,44 @@ export default function App() {
     setIsWalletModalOpen(false);
   }
 
-  async function handleDeleteWallet(id: string) {
+  function handleDeleteWallet(id: string) {
     if (wallets.length <= 1) return;
-    setWallets((prev) => prev.filter((w) => w.id !== id));
-    if (supabase && userId && isOnline) {
-      await supabase.from('wallets').delete().eq('id', id);
-    }
+    const targetWallet = wallets.find((w) => w.id === id);
+    setConfirmDialog({
+      title: 'Konfirmasi Penghapusan Dompet',
+      message: 'Apakah Anda yakin ingin menghapus kantong/dompet dana ini?',
+      detail: targetWallet ? `Dompet: ${targetWallet.name}` : undefined,
+      confirmLabel: 'Ya, Hapus Dompet',
+      onConfirm: async () => {
+        setWallets((prev) => prev.filter((w) => w.id !== id));
+        if (supabase && userId && isOnline) {
+          await supabase.from('wallets').delete().eq('id', id);
+        }
+        setConfirmDialog(null);
+      }
+    });
+  }
+
+  function handleRequestResetAllData() {
+    document.getElementById('header-settings-panel')?.hidePopover?.();
+    setConfirmDialog({
+      title: 'Konfirmasi Pengaturan Ulang Data',
+      message:
+        'Apakah Anda yakin ingin menghapus seluruh data contoh/catatan saat ini dan memulai ulang dari saldo Rp 0?',
+      detail:
+        'Seluruh riwayat transaksi, alokasi anggaran, serta catatan hutang dan piutang pada perangkat ini akan dikosongkan secara permanen. Saldo awal seluruh dompet akan diatur menjadi Rp 0.',
+      confirmLabel: 'Ya, Reset Seluruh Data',
+      onConfirm: async () => {
+        const zeroWallets = DEFAULT_WALLETS.map((w) => ({ ...w, initial_balance: 0 }));
+        setTransactions([]);
+        setBudgets([]);
+        setDebts([]);
+        setWallets(zeroWallets);
+        setCategories(DEFAULT_CATEGORIES);
+        setOfflineQueue([]);
+        setConfirmDialog(null);
+      }
+    });
   }
 
   async function handleSupabaseAuth(e: React.FormEvent) {
@@ -1943,8 +2057,8 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-100">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                   Data & Laporan
                 </p>
                 <button
@@ -1960,6 +2074,18 @@ export default function App() {
                     Ekspor CSV / Excel
                   </span>
                   <span className="text-[10px] text-slate-400">{transactions.length} baris</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRequestResetAllData}
+                  className="w-full flex items-center justify-between rounded-xl bg-rose-50/70 hover:bg-rose-100/80 border border-rose-200/80 px-3.5 py-2.5 text-xs font-semibold text-rose-700 transition-colors cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <Trash2 className="h-4 w-4 text-rose-600" />
+                    Reset Data (Mulai Rp 0)
+                  </span>
+                  <span className="text-[10px] font-medium text-rose-500">Bersihkan</span>
                 </button>
               </div>
             </div>
@@ -4419,6 +4545,54 @@ export default function App() {
                 : `Terima Pelunasan ${formatIDR(Number(debtPayAmountInput) || 0)}`}
             </button>
           </form>
+        )}
+      </ModalDialog>
+
+      {/* MODAL 10: FORMAL CONFIRMATION DIALOG BOX FOR DELETE & RESET */}
+      <ModalDialog
+        isOpen={Boolean(confirmDialog)}
+        onClose={() => setConfirmDialog(null)}
+        closedBy="closerequest"
+        title={confirmDialog?.title || 'Konfirmasi Tindakan'}
+      >
+        {confirmDialog && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3.5">
+              <div className="h-10 w-10 rounded-xl bg-rose-50 border border-rose-200/80 flex items-center justify-center shrink-0">
+                <AlertTriangle className="h-5 w-5 text-rose-600" />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-sm font-semibold text-slate-900 leading-relaxed">
+                  {confirmDialog.message}
+                </p>
+                {confirmDialog.detail && (
+                  <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2 font-medium leading-relaxed">
+                    {confirmDialog.detail}
+                  </p>
+                )}
+                <p className="text-[11px] text-slate-400">
+                  Tindakan yang telah dikonfirmasi tidak dapat dibatalkan secara otomatis.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setConfirmDialog(null)}
+                className="w-full rounded-xl bg-slate-100 hover:bg-slate-200/80 py-2.5 px-4 text-xs sm:text-sm font-semibold text-slate-700 transition-colors cursor-pointer"
+              >
+                Batalkan
+              </button>
+              <button
+                type="button"
+                onClick={confirmDialog.onConfirm}
+                className="w-full rounded-xl bg-rose-600 hover:bg-rose-500 py-2.5 px-4 text-xs sm:text-sm font-semibold text-white shadow-sm transition-colors cursor-pointer"
+              >
+                {confirmDialog.confirmLabel}
+              </button>
+            </div>
+          </div>
         )}
       </ModalDialog>
     </div>
