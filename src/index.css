@@ -1,0 +1,222 @@
+@import "tailwindcss";
+
+/* Modern Web Guidance: dark-mode-toggle & animate-to-intrinsic-sizes */
+:root {
+  color-scheme: light dark;
+  interpolate-size: allow-keywords;
+
+  &:has(> head > meta[name="color-scheme"][content="dark"]) {
+    color-scheme: dark;
+  }
+  &:has(> head > meta[name="color-scheme"][content="light"]) {
+    color-scheme: light;
+  }
+}
+
+/* Adaptive Light/Dark Theme Surfaces using CSS light-dark() */
+body,
+.bg-slate-50 {
+  background-color: light-dark(#f8fafc, #0b0f19) !important;
+  color: light-dark(#0f172a, #f1f5f9) !important;
+}
+
+.bg-white {
+  background-color: light-dark(#ffffff, #111827) !important;
+}
+
+.bg-white\/85 {
+  background-color: light-dark(rgba(255, 255, 255, 0.85), rgba(17, 24, 39, 0.88)) !important;
+}
+
+.bg-slate-50\/70,
+.bg-slate-50\/80,
+.bg-slate-100 {
+  background-color: light-dark(#f1f5f9, #1e293b) !important;
+}
+
+.text-slate-900 {
+  color: light-dark(#0f172a, #f8fafc) !important;
+}
+
+.text-slate-800,
+.text-slate-700 {
+  color: light-dark(#1e293b, #e2e8f0) !important;
+}
+
+.text-slate-600,
+.text-slate-500 {
+  color: light-dark(#64748b, #94a3b8) !important;
+}
+
+.border-slate-200,
+.border-slate-200\/80,
+.border-slate-200\/90,
+.border-slate-200\/70,
+.border-slate-100 {
+  border-color: light-dark(#e2e8f0, #1f2937) !important;
+}
+
+.divide-slate-100 > :not(:last-child) {
+  border-color: light-dark(#f1f5f9, #1f2937) !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  background-color: light-dark(#ffffff, #0f172a);
+  color: light-dark(#0f172a, #f8fafc);
+  border-color: light-dark(#e2e8f0, #334155);
+}
+
+/* Modern Web Guidance: Prevent Page Scroll Under Modal Dialog & Light-Dismiss */
+dialog:modal {
+  overscroll-behavior: contain;
+  background-color: light-dark(#ffffff, #111827);
+  color: light-dark(#0f172a, #f8fafc);
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background-color: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+/* Modern Web Guidance: Carousel Snap Highlights & Scroll Snap State Sync */
+.wallet-carousel {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.wallet-carousel::-webkit-scrollbar {
+  display: none;
+}
+
+.wallet-carousel-item {
+  scroll-snap-align: center;
+  container-type: scroll-state;
+}
+
+.wallet-card {
+  transition:
+    scale 0.35s cubic-bezier(0.25, 0.8, 0.25, 1),
+    box-shadow 0.35s,
+    border-color 0.35s;
+}
+
+@supports (container-type: scroll-state) {
+  @media (prefers-reduced-motion: no-preference) {
+    @container scroll-state(snapped: x) {
+      .wallet-card {
+        scale: 1.03;
+        box-shadow: 0 12px 28px -6px rgba(79, 70, 229, 0.22);
+        border-color: rgba(99, 102, 241, 0.45);
+      }
+    }
+  }
+}
+
+.wallet-carousel-item.is-snapped .wallet-card {
+  scale: 1.03;
+  box-shadow: 0 12px 28px -6px rgba(79, 70, 229, 0.22);
+  border-color: rgba(99, 102, 241, 0.45);
+}
+
+/* Modern Web Guidance: animate-to-intrinsic-sizes */
+.expandable-container {
+  block-size: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: block-size 0.35s ease-out, opacity 0.25s ease;
+}
+
+.expandable-container.is-expanded {
+  block-size: auto;
+  opacity: 1;
+}
+
+/* Modern Web Guidance: resilient-context-menus-and-nested-dropdowns */
+.mobile-action-popover {
+  position: fixed;
+  inset: auto;
+  bottom: 4.75rem;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: min(calc(100vw - 2rem), 19rem);
+  background-color: light-dark(#ffffff, #111827);
+  color: light-dark(#0f172a, #f8fafc);
+}
+
+@supports (position-area: block-start center) {
+  .mobile-action-popover {
+    position-area: block-start center;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+    inset: auto;
+    margin: 0 0 0.75rem 0;
+  }
+}
+
+.header-settings-popover {
+  position: fixed;
+  inset: auto;
+  top: 4.25rem;
+  right: 1rem;
+  width: min(calc(100vw - 2rem), 17rem);
+  background-color: light-dark(#ffffff, #111827);
+  color: light-dark(#0f172a, #f8fafc);
+}
+
+@supports (position-area: block-end span-inline-start) {
+  .header-settings-popover {
+    position-area: block-end span-inline-start;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+    inset: auto;
+    margin: 0.5rem 0 0 0;
+  }
+}
+
+[popover].mobile-action-popover:is(:popover-open, .\:popover-open),
+[popover].header-settings-popover:is(:popover-open, .\:popover-open) {
+  display: flex;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wallet-card,
+  .expandable-container {
+    transition: none !important;
+    scale: 1 !important;
+  }
+}
+
+/* Modern Web Guidance: validate-input-after-interaction (:user-invalid & :user-valid) */
+.field-hint {
+  display: block;
+  color: light-dark(#64748b, #94a3b8);
+  font-size: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.error-msg {
+  display: none;
+  color: #dc2626;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+  font-weight: 500;
+}
+
+input:user-invalid {
+  border-color: #dc2626;
+  background-color: light-dark(#fef2f2, #450a0a);
+}
+
+input:user-invalid + .error-msg {
+  display: block;
+}
+
+input:user-valid {
+  border-color: #16a34a;
+}
