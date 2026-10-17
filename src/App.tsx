@@ -350,6 +350,92 @@ export default function App() {
     };
   }, []);
 
+  // Mobile Back Gesture & Browser History API Synchronization (SPA Accessibility)
+  const isPopStateRef = useRef(false);
+  const isAnyModalOpen =
+    isTxModalOpen ||
+    isSmartParseModalOpen ||
+    isBudgetModalOpen ||
+    isDebtModalOpen ||
+    isDebtPayModalOpen ||
+    isCategoryModalOpen ||
+    isWalletModalOpen ||
+    isAuthModalOpen ||
+    isAiKeyModalOpen ||
+    Boolean(confirmDialog);
+
+  useEffect(() => {
+    if (!window.history.state || !window.history.state.tab) {
+      window.history.replaceState(
+        { tab: 'dashboard' },
+        '',
+        `${window.location.pathname}#dashboard`
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isPopStateRef.current) {
+      isPopStateRef.current = false;
+      return;
+    }
+    if (window.history.state?.tab !== activeTab) {
+      window.history.pushState(
+        { tab: activeTab },
+        '',
+        `${window.location.pathname}#${activeTab}`
+      );
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (isAnyModalOpen && window.history.state?.modal !== true) {
+      window.history.pushState(
+        { tab: activeTab, modal: true },
+        '',
+        `${window.location.pathname}#${activeTab}`
+      );
+    } else if (!isAnyModalOpen && window.history.state?.modal === true) {
+      window.history.back();
+    }
+  }, [isAnyModalOpen, activeTab]);
+
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      if (isAnyModalOpen) {
+        isPopStateRef.current = true;
+        setIsTxModalOpen(false);
+        setIsSmartParseModalOpen(false);
+        setIsBudgetModalOpen(false);
+        setIsDebtModalOpen(false);
+        setIsDebtPayModalOpen(false);
+        setIsCategoryModalOpen(false);
+        setIsWalletModalOpen(false);
+        setIsAuthModalOpen(false);
+        setIsAiKeyModalOpen(false);
+        setConfirmDialog(null);
+        return;
+      }
+
+      const prevTab = (e.state?.tab as ActiveTab) || 'dashboard';
+      isPopStateRef.current = true;
+      setActiveTab(prevTab);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      if (!e.state?.tab) {
+        window.history.replaceState(
+          { tab: 'dashboard' },
+          '',
+          `${window.location.pathname}#dashboard`
+        );
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isAnyModalOpen]);
+
   // Persist to localStorage (Offline-First queue/cache)
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.wallets, JSON.stringify(wallets));
@@ -1943,11 +2029,29 @@ export default function App() {
               )}
             </button>
 
-            <img
-              src="/logo.png"
-              alt="MyLucy Logo"
-              className="lg:hidden h-9 w-9 shrink-0 rounded-xl object-cover shadow-md border border-violet-500/30"
-            />
+            {activeTab !== 'dashboard' ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.history.state?.tab && window.history.length > 1) {
+                    window.history.back();
+                  } else {
+                    setActiveTab('dashboard');
+                  }
+                }}
+                aria-label="Kembali ke halaman sebelumnya"
+                title="Kembali"
+                className="lg:hidden h-9 w-9 shrink-0 rounded-xl bg-slate-100 hover:bg-slate-200/80 border border-slate-200/80 flex items-center justify-center text-slate-700 transition-colors cursor-pointer"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+            ) : (
+              <img
+                src="/logo.png"
+                alt="MyLucy Logo"
+                className="lg:hidden h-9 w-9 shrink-0 rounded-xl object-cover shadow-md border border-violet-500/30"
+              />
+            )}
             <div>
               <h2 className="text-base sm:text-xl font-bold text-slate-900">
                 {activeTab === 'dashboard' && 'Dashboard Keuangan'}
