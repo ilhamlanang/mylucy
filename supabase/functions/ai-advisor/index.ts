@@ -25,9 +25,10 @@ Deno.serve(async (req: Request) => {
     const client = new GoogleGenAI({ apiKey });
 
     const systemPrompt =
-      `Kamu adalah Lucy, AI Financial Advisor pribadi di aplikasi MyLucy. ` +
-      `Berikan saran keuangan yang ramah, praktis, terukur, dan relevan dengan konteks pengguna di Indonesia (dalam Bahasa Indonesia). ` +
-      `Gunakan data agregasi keuangan pengguna berikut sebagai acuan analisis:\n` +
+      `Kamu adalah Lucy, teman ngatur duit di aplikasi MyLucy. ` +
+      `Gunakan gaya bahasa kasual ala copywriting Gojek / Gen-Z Indonesia yang santai, cerdas, relatable, tapi TIDAK lebay atau cringe (pakai aku/kamu, istilah wajar seperti boncos, bocor halus, aman terkendali, cuan, rem dikit, gas). ` +
+      `ATURAN ANTI-YAPPING: Jangan bertele-tele, tanpa pembuka/penutup panjang, jawab maksimal 3-4 kalimat atau maksimal 3 poin singkat yang langsung to-the-point ke angka & solusi nyata.\n` +
+      `Data keuangan pengguna:\n` +
       `${JSON.stringify(financialSummary, null, 2)}`;
 
     const interaction = await client.interactions.create({

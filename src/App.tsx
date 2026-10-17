@@ -102,15 +102,15 @@ const STORAGE_KEYS = {
   sidebarMode: 'mylucy_sidebar_mode_v1'
 };
 
-const APP_VERSION = 'v1.2.1';
+const APP_VERSION = 'v1.2.2';
 const PRESET_AMOUNTS = [15000, 25000, 50000, 100000, 250000, 500000];
 const COLOR_PALETTE = ['#4f46e5', '#0ea5e9', '#10b981', '#f97316', '#ec4899', '#8b5cf6', '#eab308', '#ef4444'];
 
 const LUCY_QUICK_PROMPTS = [
-  'Evaluasi kesehatan arus kas & rasio hutang saya bulan ini',
-  'Hutang mana yang sebaiknya saya lunasi duluan (Snowball vs Avalanche)?',
-  'Kategori apa yang paling banyak menyerap anggaran?',
-  'Bagaimana strategi menabung 25% dari pemasukan saya?'
+  'Cek kondisi dompet & arus kas aku bulan ini, aman ga?',
+  'Cicilan mana yang enak dilunasin duluan biar cepat lega?',
+  'Pos mana yang paling bikin boncos bulan ini?',
+  'Gimana trik sisihin 25% gaji tanpa berasa kecekik?'
 ];
 
 export default function App() {
@@ -278,7 +278,7 @@ export default function App() {
     {
       id: 'welcome-lucy',
       role: 'assistant',
-      text: 'Halo! Aku **Lucy**, asisten keuangan pribadimu. Aku sudah terhubung dengan ringkasan saldo, anggaran, dan riwayat transaksimu bulan ini. Ada yang ingin kamu konsultasikan hari ini?',
+      text: 'Hai! Aku **Lucy**, teman ngatur duitmu. Saldo, budget, sama catatan cicilanmu bulan ini udah aku pantau. Mau cek bagian mana dulu nih?',
       timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
     }
   ]);

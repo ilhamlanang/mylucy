@@ -231,17 +231,19 @@ export async function streamLucyAdvisorResponse(
     : '';
 
   const systemPrompt =
-    `Kamu adalah Lucy, AI Financial Advisor cerdas di aplikasi MyLucy. ` +
-    `Jawab dengan bahasa Indonesia yang hangat, terstruktur (gunakan bullet points singkat), dan berikan rekomendasi konkret berdasarkan data keuangan pengguna bulan ini:\n` +
-    `- Total Saldo Gabungan: ${formatIDR(context.totalBalance)}\n` +
-    `- Pemasukan Bulan Ini: ${formatIDR(context.monthlyIncome)}\n` +
-    `- Pengeluaran Bulan Ini: ${formatIDR(context.monthlyExpense)}\n` +
-    `- Rasio Tabungan (Savings Rate): ${context.savingsRatePct}%\n` +
-    `- Distribusi Pengeluaran Terbesar: ${context.topCategories
+    `Kamu adalah Lucy, teman ngatur duit di aplikasi MyLucy. ` +
+    `Gunakan gaya bahasa kasual ala copywriting Gojek / Gen-Z Indonesia yang santai, cerdas, relatable, tapi TIDAK lebay atau cringe (pakai aku/kamu, istilah wajar seperti boncos, bocor halus, aman terkendali, cuan, rem dikit, gas). ` +
+    `ATURAN KETAT ANTI-YAPPING:\n` +
+    `1. JANGAN bertele-tele! Dilarang pakai paragraf pembuka/penutup basa-basi.\n` +
+    `2. Jawab maksimal 3-4 kalimat pendek atau maksimal 3 poin singkat yang langsung to-the-point ke angka & aksi nyata.\n` +
+    `Data keuangan kamu bulan ini:\n` +
+    `- Total Saldo: ${formatIDR(context.totalBalance)}\n` +
+    `- Pemasukan: ${formatIDR(context.monthlyIncome)} | Pengeluaran: ${formatIDR(context.monthlyExpense)} (Savings Rate: ${context.savingsRatePct}%)\n` +
+    `- Pos Pengeluaran Terbesar: ${context.topCategories
       .map(
         (c) =>
-          `${c.name}: ${formatIDR(c.amount)} (${c.percentage}% dari pengeluaran${
-            c.budgetLimit ? `, batas budget ${formatIDR(c.budgetLimit)}` : ''
+          `${c.name}: ${formatIDR(c.amount)} (${c.percentage}%${
+            c.budgetLimit ? `, limit ${formatIDR(c.budgetLimit)}` : ''
           })`
       )
       .join('; ')}${debtInfoText}`;
@@ -294,39 +296,54 @@ export async function streamLucyAdvisorResponse(
     }
   }
 
-  // 3. Context-Aware Simulated Streaming Response (Instant Local Demo)
+  // 3. Context-Aware Simulated Streaming Response (Gojek-style Gen-Z Casual & Anti-Yapping)
+  const qLower = question.toLowerCase();
   const topCat = context.topCategories[0];
   const overBudgetCats = context.topCategories.filter(
     (c) => c.budgetLimit && c.amount >= c.budgetLimit * 0.8
   );
   const ds = context.debtSummary;
+  const unpaidDebts = ds?.activeDebts.filter((d) => d.direction === 'payable' && !d.isPaidThisMonth) || [];
+  const smallestDebt = [...(ds?.activeDebts.filter((d) => d.direction === 'payable') || [])].sort(
+    (a, b) => a.remainingAmount - b.remainingAmount
+  )[0];
 
-  let simulatedReply = `Halo! Berdasarkan analisis *real-time* terhadap arus kas, anggaran, dan komitmen hutangmu bulan ini:\n\n`;
-  simulatedReply += `• **Kesehatan Arus Kas**: Pemasukanmu tercatat **${formatIDR(context.monthlyIncome)}** dengan total pengeluaran **${formatIDR(context.monthlyExpense)}** (*Savings Rate* **${context.savingsRatePct}%**).\n`;
+  let simulatedReply = '';
 
-  if (ds) {
-    simulatedReply += `• **Komitmen Hutang & Piutang**: Sisa pokok hutang aktifmu **${formatIDR(ds.totalPayableRemaining)}** dengan rasio cicilan (*Debt Service Ratio*) **${ds.debtServiceRatioPct}%** (${ds.debtServiceRatioPct < 30 ? 'Sehat < 30%' : 'Perlu Waspada'}). Tagihan wajib bulan ini yang belum dibayar sebesar **${formatIDR(ds.unpaidMonthlyObligation)}**, dan kamu memiliki piutang yang bisa ditagih sebesar **${formatIDR(ds.totalReceivableRemaining)}**.\n`;
-  }
-
-  if (topCat) {
-    simulatedReply += `• **Pos Pengeluaran Terbesar**: Kategori **${topCat.name}** menyerap **${formatIDR(topCat.amount)}** (${topCat.percentage}% dari total pengeluaranmu).\n`;
-  }
-
-  if (overBudgetCats.length > 0) {
-    simulatedReply += `• **Peringatan Anggaran**: Kategori **${overBudgetCats.map((c) => c.name).join(', ')}** sudah mendekati atau melampaui batas aman anggaran bulanan.\n`;
+  if (/hutang|cicilan|snowball|avalanche|tagihan|pinjam|lunas/i.test(qLower)) {
+    if (!ds || ds.totalPayableRemaining <= 0) {
+      simulatedReply =
+        `Dompetmu bebas cicilan aktif bulan ini, mantap! Kalau ada piutang **${formatIDR(ds?.totalReceivableRemaining || 0)}** di teman, tinggal colek pelan-pelan biar balik ke kantong.`;
+    } else {
+      simulatedReply =
+        `Rekap cicilanmu singkat aja nih:\n` +
+        `• **Sisa Pokok**: **${formatIDR(ds.totalPayableRemaining)}** (rasio cicilan **${ds.debtServiceRatioPct}%** — ${ds.debtServiceRatioPct < 30 ? 'masih aman terkendali' : 'mulai lampu kuning, rem jajan dulu'}).\n` +
+        `• **Belum Dibayar Bulan Ini**: **${formatIDR(ds.unpaidMonthlyObligation)}**${unpaidDebts[0] ? ` (terdekat: *${unpaidDebts[0].title}* tgl ${unpaidDebts[0].dueDay})` : ''}.\n` +
+        `• **Taktik Cepat**: ${smallestDebt ? `Sikat **${smallestDebt.title}** (${formatIDR(smallestDebt.remainingAmount)}) duluan pakai metode *Snowball* biar beban bulanan cepat lega.` : 'Amankan tagihan bulan ini dulu biar nggak kena denda.'}`;
+    }
+  } else if (/kategori|boros|bocor|serap|anggaran|budget|jajan/i.test(qLower)) {
+    if (!topCat) {
+      simulatedReply = `Belum ada pengeluaran tercatat bulan ini. Dompet masih utuh **${formatIDR(context.totalBalance)}**, aman terkendali!`;
+    } else {
+      simulatedReply =
+        `Yang paling bikin dompet olahraga bulan ini:\n` +
+        `• **Juara Pengeluaran**: **${topCat.name}** nyedot **${formatIDR(topCat.amount)}** (${topCat.percentage}% dari total keluar).\n` +
+        `• **Status Amplop**: ${overBudgetCats.length > 0 ? `Kategori **${overBudgetCats.map((c) => c.name).join(', ')}** udah hampir mentok limit, rem dikit ya biar nggak boncos di akhir bulan.` : 'Semua amplop budget masih di jalur aman (<80%).'}`;
+    }
+  } else if (/nabung|tabung|invest|25%|sisa|strategi/i.test(qLower)) {
+    const target25 = Math.round(context.monthlyIncome * 0.25);
+    simulatedReply =
+      `Biar tabungan 25% (**${formatIDR(target25)}**) nggak cuma wacana:\n` +
+      `• **Posisi Sekarang**: *Savings rate* kamu di **${context.savingsRatePct}%** dengan sisa saldo gabungan **${formatIDR(context.totalBalance)}**.\n` +
+      `• **Langkah Sat-Set**: Langsung pisahin **${formatIDR(target25)}** di awal ke kantong tabungan, terus kunci jajan harian maksimal dari sisa *Safe-to-Spend* setelah potong cicilan (**${formatIDR(ds?.unpaidMonthlyObligation || 0)}**).`;
   } else {
-    simulatedReply += `• **Status Anggaran**: Seluruh pos pengeluaran variabelmu masih berada di bawah ambang batas *alert* 80%.\n`;
+    // Default / Cashflow check (ringkas & to-the-point)
+    simulatedReply =
+      `Cek kondisi dompetmu bulan ini, singkat padat:\n` +
+      `• **Arus Kas**: Masuk **${formatIDR(context.monthlyIncome)}**, keluar **${formatIDR(context.monthlyExpense)}** (*savings rate* **${context.savingsRatePct}%** — ${context.savingsRatePct >= 20 ? 'aman terkendali!' : 'agak tipis, yuk rem bocor halus'}).\n` +
+      `• **Bocor Terbesar**: ${topCat ? `**${topCat.name}** di **${formatIDR(topCat.amount)}** (${topCat.percentage}%).` : 'Belum ada pengeluaran berarti.'}\n` +
+      `• **Fokus Sekarang**: ${ds && ds.unpaidMonthlyObligation > 0 ? `Amankan **${formatIDR(ds.unpaidMonthlyObligation)}** buat cicilan yang belum lunas bulan ini biar sisa uang jajanmu riil.` : 'Pertahankan ritme belanjamu, surplusnya bisa langsung parkir ke tabungan.'}`;
   }
-
-  simulatedReply += `\n**Rekomendasi Strategis Lucy:**\n`;
-  if (ds && ds.unpaidMonthlyObligation > 0) {
-    simulatedReply += `1. Prioritaskan penyisihan dana sebesar **${formatIDR(ds.unpaidMonthlyObligation)}** untuk melunasi cicilan yang jatuh tempo bulan ini agar *Safe-to-Spend* harianmu tetap akurat dan bebas denda keterlambatan.\n`;
-  } else if (context.savingsRatePct < 20) {
-    simulatedReply += `1. Usahakan menaikkan rasio tabungan ke minimal **20%** (${formatIDR(Math.round(context.monthlyIncome * 0.2))}) dengan membatasi transaksi impulsif harian.\n`;
-  } else {
-    simulatedReply += `1. Rasio tabunganmu (**${context.savingsRatePct}%**) sudah sangat sehat di atas standar ideal 20%! Kamu bisa mengalokasikan surplus ke kantong **Tabungan & Investasi**.\n`;
-  }
-  simulatedReply += `2. Gunakan metode **Debt Snowball** (lunasi sisa pokok terkecil dulu) untuk mempercepat kebebasan finansial, serta jangan lupa tindak lanjuti piutang yang jatuh tempo bulan ini.`;
 
   // Stream word by word for realistic < 100ms TTFT UX
   const words = simulatedReply.split(' ');
@@ -335,7 +352,7 @@ export async function streamLucyAdvisorResponse(
     const chunk = (i === 0 ? '' : ' ') + words[i];
     accumulated += chunk;
     onDelta(chunk);
-    await new Promise((r) => setTimeout(r, 18));
+    await new Promise((r) => setTimeout(r, 14));
   }
 
   return { fullText: accumulated, interactionId: null, engine: 'local-Contextual-AI' };
