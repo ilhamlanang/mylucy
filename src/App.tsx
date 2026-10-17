@@ -102,6 +102,7 @@ const STORAGE_KEYS = {
   sidebarMode: 'mylucy_sidebar_mode_v1'
 };
 
+const APP_VERSION = 'v1.2.0';
 const PRESET_AMOUNTS = [15000, 25000, 50000, 100000, 250000, 500000];
 const COLOR_PALETTE = ['#4f46e5', '#0ea5e9', '#10b981', '#f97316', '#ec4899', '#8b5cf6', '#eab308', '#ef4444'];
 
@@ -2097,6 +2098,15 @@ export default function App() {
                 <span>Transaksi Baru</span>
               </button>
             </div>
+
+            {/* App Version Capsule Badge (Mobile & Desktop) */}
+            <span
+              title={`MyLucy Personal Finance PWA ${APP_VERSION}`}
+              className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 border border-slate-200/80 px-2.5 py-1 text-[11px] font-bold tracking-tight text-slate-600 select-none"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+              {APP_VERSION}
+            </span>
 
             {/* Top-Right Settings Button (Mobile & Desktop) */}
             <button
