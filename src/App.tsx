@@ -102,7 +102,7 @@ const STORAGE_KEYS = {
   sidebarMode: 'mylucy_sidebar_mode_v1'
 };
 
-const APP_VERSION = 'v1.2.2';
+const APP_VERSION = 'v1.2.3';
 const PRESET_AMOUNTS = [15000, 25000, 50000, 100000, 250000, 500000];
 const COLOR_PALETTE = ['#4f46e5', '#0ea5e9', '#10b981', '#f97316', '#ec4899', '#8b5cf6', '#eab308', '#ef4444'];
 
@@ -351,13 +351,13 @@ export default function App() {
     };
   }, []);
 
-  // Mobile Back Gesture & Browser History API Synchronization (SPA Accessibility & Exit Guard)
+  // Mobile Hardware Back Gesture & Browser History API Synchronization (SPA Accessibility & Exit Guard)
   const activeTabRef = useRef<ActiveTab>(activeTab);
-  const isExitingAppRef = useRef(false);
-  const hasUserActivatedGuardRef = useRef(false);
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
+  const [isAppExited, setIsAppExited] = useState(false);
+  const isExitModalOpenRef = useRef(false);
 
-  const isAnyModalOpen =
+  const isAnyNonExitModalOpen =
     isTxModalOpen ||
     isSmartParseModalOpen ||
     isBudgetModalOpen ||
@@ -367,114 +367,90 @@ export default function App() {
     isWalletModalOpen ||
     isAuthModalOpen ||
     isAiKeyModalOpen ||
-    isExitModalOpen ||
     Boolean(confirmDialog);
 
-  const isAnyModalOpenRef = useRef(isAnyModalOpen);
+  const isAnyNonExitModalOpenRef = useRef(isAnyNonExitModalOpen);
   useEffect(() => {
-    isAnyModalOpenRef.current = isAnyModalOpen;
-  }, [isAnyModalOpen]);
+    isAnyNonExitModalOpenRef.current = isAnyNonExitModalOpen;
+  }, [isAnyNonExitModalOpen]);
+
+  useEffect(() => {
+    isExitModalOpenRef.current = isExitModalOpen;
+  }, [isExitModalOpen]);
 
   useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
 
-  // Arm the root history guard on mount AND reinforce on first user interaction (required by Android Chrome History Intervention)
-  const ensureRootHistoryGuard = useCallback(() => {
-    if (hasUserActivatedGuardRef.current && window.history.state?.mylucy) {
-      return;
-    }
-    hasUserActivatedGuardRef.current = true;
-    const currentTab = activeTabRef.current;
-
+  useEffect(() => {
+    // Initialize 2-entry root structure on mount:
+    // Index 0 = 'root-guard', Index 1 = 'base' (Dashboard).
+    // IMPORTANT: Do NOT overwrite Index 1 on pointerdown, so user taps on Dashboard naturally grant User Activation to Index 1!
     window.history.replaceState(
-      { mylucy: true, tab: 'dashboard', role: 'root-guard', depth: 0 },
+      { mylucy: true, tab: 'dashboard', role: 'root-guard' },
       '',
       `${window.location.pathname}#dashboard`
     );
     window.history.pushState(
-      { mylucy: true, tab: 'dashboard', role: 'base', depth: 1 },
+      { mylucy: true, tab: 'dashboard', role: 'base' },
       '',
       `${window.location.pathname}#dashboard`
     );
+  }, []);
 
-    if (currentTab !== 'dashboard') {
+  // Synchronous tab navigation helper called directly inside button click handlers
+  const navigateToTab = useCallback((nextTab: ActiveTab) => {
+    const prevTab = activeTabRef.current;
+
+    if (prevTab === nextTab) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // If user is on a sub-tab and taps Dashboard (or <- back arrow), pop the sub-tab entry back to Index 1 ('base')
+    if (nextTab === 'dashboard') {
+      activeTabRef.current = 'dashboard';
+      setActiveTab('dashboard');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      if (window.history.state?.mylucy && window.history.state?.role === 'tab') {
+        window.history.back();
+      } else if (window.history.state?.role !== 'base') {
+        window.history.pushState(
+          { mylucy: true, tab: 'dashboard', role: 'base' },
+          '',
+          `${window.location.pathname}#dashboard`
+        );
+      }
+      return;
+    }
+
+    // Navigating to a sub-tab ('wallets', 'budgets', 'lucy', 'transactions', 'categories')
+    activeTabRef.current = nextTab;
+    setActiveTab(nextTab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (prevTab === 'dashboard') {
+      // Push single entry from Index 1 ('base') -> Index 2 ('tab') inside click event
       window.history.pushState(
-        { mylucy: true, tab: currentTab, role: 'tab', depth: 2 },
+        { mylucy: true, tab: nextTab, role: 'tab' },
         '',
-        `${window.location.pathname}#${currentTab}`
+        `${window.location.pathname}#${nextTab}`
+      );
+    } else {
+      // Switching from one sub-tab to another sub-tab: replace at Index 2 so Back always returns directly to Dashboard
+      window.history.replaceState(
+        { mylucy: true, tab: nextTab, role: 'tab' },
+        '',
+        `${window.location.pathname}#${nextTab}`
       );
     }
   }, []);
 
   useEffect(() => {
-    // Initialize root guard + base dashboard state on initial load
-    window.history.replaceState(
-      { mylucy: true, tab: 'dashboard', role: 'root-guard', depth: 0 },
-      '',
-      `${window.location.pathname}#dashboard`
-    );
-    window.history.pushState(
-      { mylucy: true, tab: 'dashboard', role: 'base', depth: 1 },
-      '',
-      `${window.location.pathname}#dashboard`
-    );
-
-    const handleFirstUserGesture = () => {
-      if (!hasUserActivatedGuardRef.current) {
-        ensureRootHistoryGuard();
-      }
-    };
-
-    window.addEventListener('pointerdown', handleFirstUserGesture, { once: true, passive: true });
-    window.addEventListener('keydown', handleFirstUserGesture, { once: true, passive: true });
-    return () => {
-      window.removeEventListener('pointerdown', handleFirstUserGesture);
-      window.removeEventListener('keydown', handleFirstUserGesture);
-    };
-  }, [ensureRootHistoryGuard]);
-
-  // Synchronous tab navigation helper called directly inside button click handlers
-  const navigateToTab = useCallback(
-    (nextTab: ActiveTab) => {
-      ensureRootHistoryGuard();
-      const prevTab = activeTabRef.current;
-
-      if (prevTab === nextTab) {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return;
-      }
-
-      activeTabRef.current = nextTab;
-      setActiveTab(nextTab);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-
-      const currentDepth =
-        typeof window.history.state?.depth === 'number' ? window.history.state.depth : 1;
-
-      if (nextTab === 'dashboard') {
-        window.history.pushState(
-          { mylucy: true, tab: 'dashboard', role: 'base', depth: currentDepth + 1 },
-          '',
-          `${window.location.pathname}#dashboard`
-        );
-      } else {
-        window.history.pushState(
-          { mylucy: true, tab: nextTab, role: 'tab', depth: currentDepth + 1 },
-          '',
-          `${window.location.pathname}#${nextTab}`
-        );
-      }
-    },
-    [ensureRootHistoryGuard]
-  );
-
-  useEffect(() => {
     const handlePopState = (e: PopStateEvent) => {
-      if (isExitingAppRef.current) return;
-
-      // Priority 1: If any modal is open when popstate fires, close the modal and keep current tab in history
-      if (isAnyModalOpenRef.current) {
+      // Priority 1: If any form/confirmation modal is open when popstate fires, close modal and stay on current tab
+      if (isAnyNonExitModalOpenRef.current) {
         setIsTxModalOpen(false);
         setIsSmartParseModalOpen(false);
         setIsBudgetModalOpen(false);
@@ -484,17 +460,14 @@ export default function App() {
         setIsWalletModalOpen(false);
         setIsAuthModalOpen(false);
         setIsAiKeyModalOpen(false);
-        setIsExitModalOpen(false);
         setConfirmDialog(null);
 
         const currentTab = activeTabRef.current;
-        const poppedDepth = typeof e.state?.depth === 'number' ? e.state.depth : 0;
         window.history.pushState(
           {
             mylucy: true,
             tab: currentTab,
-            role: currentTab === 'dashboard' ? 'base' : 'tab',
-            depth: Math.max(poppedDepth + 1, 1)
+            role: currentTab === 'dashboard' ? 'base' : 'tab'
           },
           '',
           `${window.location.pathname}#${currentTab}`
@@ -502,52 +475,37 @@ export default function App() {
         return;
       }
 
-      // Priority 2: User is on a sub-view (e.g., Kelola Dompet, Budget, Riwayat, Lucy AI, Kategori) -> Return to previous tab or Dashboard
+      // Priority 2: User is on a sub-view (e.g., Kelola Dompet, Budget, Riwayat, Lucy AI, Kategori) -> Always return to Dashboard
       if (activeTabRef.current !== 'dashboard') {
-        const targetTab: ActiveTab =
-          e.state?.mylucy &&
-          e.state?.role === 'tab' &&
-          typeof e.state?.tab === 'string' &&
-          e.state.tab !== activeTabRef.current
-            ? (e.state.tab as ActiveTab)
-            : 'dashboard';
-
-        activeTabRef.current = targetTab;
-        setActiveTab(targetTab);
+        activeTabRef.current = 'dashboard';
+        setActiveTab('dashboard');
         window.scrollTo({ top: 0, behavior: 'smooth' });
 
-        // Ensure the root guard + base dashboard entry remain intact beneath the current view
+        // If browser skipped 'base' and landed on 'root-guard', restore 'base' so next Back triggers Exit Modal
         if (!e.state?.mylucy || e.state?.role === 'root-guard') {
           window.history.replaceState(
-            { mylucy: true, tab: 'dashboard', role: 'root-guard', depth: 0 },
+            { mylucy: true, tab: 'dashboard', role: 'root-guard' },
             '',
             `${window.location.pathname}#dashboard`
           );
           window.history.pushState(
-            {
-              mylucy: true,
-              tab: targetTab,
-              role: targetTab === 'dashboard' ? 'base' : 'tab',
-              depth: 1
-            },
+            { mylucy: true, tab: 'dashboard', role: 'base' },
             '',
-            `${window.location.pathname}#${targetTab}`
+            `${window.location.pathname}#dashboard`
           );
         }
         return;
       }
 
-      // Priority 3: User is ALREADY on the root Dashboard view and swiped Back -> Show Exit Confirmation Dialog
-      window.history.replaceState(
-        { mylucy: true, tab: 'dashboard', role: 'root-guard', depth: 0 },
-        '',
-        `${window.location.pathname}#dashboard`
-      );
-      window.history.pushState(
-        { mylucy: true, tab: 'dashboard', role: 'base', depth: 1 },
-        '',
-        `${window.location.pathname}#dashboard`
-      );
+      // Priority 3: User is ALREADY on the root Dashboard view and swiped Hardware Back
+      if (isExitModalOpenRef.current) {
+        // User swiped Back a second time while Exit Modal was open -> close modal and let OS exit from Index 0
+        setIsExitModalOpen(false);
+        setIsAppExited(true);
+        return;
+      }
+
+      // Keep history at Index 0 ('root-guard') while Exit Confirmation Dialog is shown
       setIsExitModalOpen(true);
     };
 
@@ -557,41 +515,51 @@ export default function App() {
 
   function handleStayInApp() {
     setIsExitModalOpen(false);
-    if (window.history.state?.role !== 'base') {
-      window.history.replaceState(
-        { mylucy: true, tab: 'dashboard', role: 'root-guard', depth: 0 },
-        '',
-        `${window.location.pathname}#dashboard`
-      );
-      window.history.pushState(
-        { mylucy: true, tab: 'dashboard', role: 'base', depth: 1 },
-        '',
-        `${window.location.pathname}#dashboard`
-      );
-    }
+    // Called inside a synchronous user click event -> pushes user-activated Index 1 ('base')
+    window.history.replaceState(
+      { mylucy: true, tab: 'dashboard', role: 'root-guard' },
+      '',
+      `${window.location.pathname}#dashboard`
+    );
+    window.history.pushState(
+      { mylucy: true, tab: 'dashboard', role: 'base' },
+      '',
+      `${window.location.pathname}#dashboard`
+    );
   }
 
   function handleConfirmExitApp() {
-    isExitingAppRef.current = true;
     setIsExitModalOpen(false);
+    setIsAppExited(true);
+
+    // Attempt native window close (works in WebViews / popup contexts)
     try {
       window.close();
     } catch {
-      // Ignore if blocked
+      // Ignore if blocked by mobile browser security
     }
-    const currentDepth =
-      typeof window.history.state?.depth === 'number' ? window.history.state.depth : 1;
-    const targetDelta = -(currentDepth + 1);
-    if (window.history.length > Math.abs(targetDelta)) {
-      window.history.go(targetDelta);
-    } else if (window.history.length > 1) {
-      window.history.go(-(window.history.length - 1));
-      setTimeout(() => {
-        window.history.back();
-      }, 60);
-    } else {
+
+    // If user navigated to MyLucy from an external referrer in the same tab, go back to it
+    if (document.referrer && window.history.length > 1) {
       window.history.back();
     }
+  }
+
+  function handleReopenApp() {
+    setIsAppExited(false);
+    setIsExitModalOpen(false);
+    activeTabRef.current = 'dashboard';
+    setActiveTab('dashboard');
+    window.history.replaceState(
+      { mylucy: true, tab: 'dashboard', role: 'root-guard' },
+      '',
+      `${window.location.pathname}#dashboard`
+    );
+    window.history.pushState(
+      { mylucy: true, tab: 'dashboard', role: 'base' },
+      '',
+      `${window.location.pathname}#dashboard`
+    );
   }
 
   // Persist to localStorage (Offline-First queue/cache)
@@ -1798,6 +1766,37 @@ export default function App() {
     e.preventDefault();
     setSavedGeminiApiKey(geminiKeyInput);
     setIsAiKeyModalOpen(false);
+  }
+
+  if (isAppExited) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center select-none">
+        <div className="max-w-sm w-full rounded-3xl bg-slate-900/90 border border-slate-800 p-7 shadow-2xl space-y-5">
+          <div className="mx-auto h-16 w-16 rounded-2xl overflow-hidden shadow-lg shadow-indigo-500/20 border border-violet-500/30">
+            <img src="/logo.png" alt="MyLucy Logo" className="h-full w-full object-cover" />
+          </div>
+          <div className="space-y-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3 py-1 text-[11px] font-bold text-emerald-300">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Data Tersimpan Aman ({APP_VERSION})
+            </span>
+            <h1 className="text-lg font-extrabold tracking-tight text-white">
+              Sesi MyLucy Telah Ditutup
+            </h1>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Seluruh catatan transaksi, saldo dompet, dan anggaran Anda sudah tersimpan otomatis di perangkat ini. Silakan usap kembali (*swipe back*) sekali lagi atau tutup tab browser Anda.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleReopenApp}
+            className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 py-3 px-4 text-xs sm:text-sm font-semibold text-white shadow-lg shadow-indigo-600/25 transition-colors cursor-pointer"
+          >
+            Buka Kembali MyLucy
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -4867,49 +4866,60 @@ export default function App() {
         )}
       </ModalDialog>
 
-      {/* MODAL 11: KONFIRMASI KELUAR APLIKASI (MOBILE SWIPE-BACK EXIT DIALOG) */}
-      <ModalDialog
-        isOpen={isExitModalOpen}
-        onClose={handleStayInApp}
-        closedBy="closerequest"
-        title="Keluar dari Aplikasi MyLucy"
-      >
-        <div className="space-y-4">
-          <div className="flex items-start gap-3.5">
-            <img
-              src="/logo.png"
-              alt="MyLucy Logo"
-              className="h-11 w-11 shrink-0 rounded-2xl object-cover shadow-md border border-violet-500/30"
-            />
-            <div className="space-y-1.5">
-              <p className="text-sm font-bold text-slate-900 leading-relaxed">
-                Apakah Anda yakin ingin menutup dan keluar dari aplikasi MyLucy?
-              </p>
-              <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2 leading-relaxed">
-                Seluruh catatan transaksi, saldo dompet, serta pengaturan anggaran Anda telah tersimpan otomatis di perangkat ini.
-              </p>
+      {/* MODAL 11: KONFIRMASI KELUAR APLIKASI (NON-CLOSEWATCHER OVERLAY FOR MOBILE HARDWARE BACK) */}
+      {isExitModalOpen && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="exit-app-dialog-title"
+          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 text-slate-900 shadow-2xl border border-slate-200/90 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h2 id="exit-app-dialog-title" className="text-base sm:text-lg font-bold text-slate-900">
+                Keluar dari Aplikasi MyLucy
+              </h2>
+              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-500">
+                {APP_VERSION}
+              </span>
+            </div>
+
+            <div className="flex items-start gap-3.5">
+              <img
+                src="/logo.png"
+                alt="MyLucy Logo"
+                className="h-11 w-11 shrink-0 rounded-2xl object-cover shadow-md border border-violet-500/30"
+              />
+              <div className="space-y-1.5">
+                <p className="text-sm font-bold text-slate-900 leading-relaxed">
+                  Apakah Anda yakin ingin menutup dan keluar dari aplikasi MyLucy?
+                </p>
+                <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2 leading-relaxed">
+                  Seluruh catatan transaksi, saldo dompet, serta pengaturan anggaran Anda telah tersimpan otomatis di perangkat ini.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={handleStayInApp}
+                className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 py-2.5 px-4 text-xs sm:text-sm font-semibold text-white shadow-sm transition-colors cursor-pointer"
+              >
+                Tetap di Aplikasi
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmExitApp}
+                className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 py-2.5 px-4 text-xs sm:text-sm font-semibold text-white shadow-sm transition-colors cursor-pointer"
+              >
+                <LogOut className="h-4 w-4" />
+                Ya, Keluar
+              </button>
             </div>
           </div>
-
-          <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={handleStayInApp}
-              className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 py-2.5 px-4 text-xs sm:text-sm font-semibold text-white shadow-sm transition-colors cursor-pointer"
-            >
-              Tetap di Aplikasi
-            </button>
-            <button
-              type="button"
-              onClick={handleConfirmExitApp}
-              className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 py-2.5 px-4 text-xs sm:text-sm font-semibold text-slate-700 transition-colors cursor-pointer"
-            >
-              <LogOut className="h-4 w-4" />
-              Ya, Keluar
-            </button>
-          </div>
         </div>
-      </ModalDialog>
+      )}
     </div>
   );
 }
