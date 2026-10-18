@@ -99,10 +99,12 @@ const STORAGE_KEYS = {
   budgets: 'mylucy_budgets_v1',
   debts: 'mylucy_debts_v1',
   offlineQueue: 'mylucy_offline_queue_v1',
-  sidebarMode: 'mylucy_sidebar_mode_v1'
+  sidebarMode: 'mylucy_sidebar_mode_v1',
+  chatMessages: 'mylucy_chat_messages_v1',
+  chatInteractionId: 'mylucy_chat_interaction_id_v1'
 };
 
-const APP_VERSION = 'v1.2.3';
+const APP_VERSION = 'v1.2.4';
 const PRESET_AMOUNTS = [15000, 25000, 50000, 100000, 250000, 500000];
 const COLOR_PALETTE = ['#4f46e5', '#0ea5e9', '#10b981', '#f97316', '#ec4899', '#8b5cf6', '#eab308', '#ef4444'];
 
@@ -112,6 +114,15 @@ const LUCY_QUICK_PROMPTS = [
   'Pos mana yang paling bikin boncos bulan ini?',
   'Gimana trik sisihin 25% gaji tanpa berasa kecekik?'
 ];
+
+function createInitialLucyWelcomeMessage(): ChatMessage {
+  return {
+    id: 'welcome-lucy',
+    role: 'assistant',
+    text: 'Hai! Aku **Lucy**, teman ngatur duitmu. Saldo, budget, sama catatan cicilanmu bulan ini udah aku pantau. Mau cek bagian mana dulu nih?',
+    timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+  };
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -273,18 +284,30 @@ export default function App() {
   const [parsedPreview, setParsedPreview] = useState<ParsedMutationResult | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
 
-  // Lucy AI Financial Advisor Chat state (Phase 2)
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      id: 'welcome-lucy',
-      role: 'assistant',
-      text: 'Hai! Aku **Lucy**, teman ngatur duitmu. Saldo, budget, sama catatan cicilanmu bulan ini udah aku pantau. Mau cek bagian mana dulu nih?',
-      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+  // Lucy AI Financial Advisor Chat state (Phase 2) - persisted in localStorage
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.chatMessages);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Ignore parse errors
     }
-  ]);
+    return [createInitialLucyWelcomeMessage()];
+  });
   const [chatInput, setChatInput] = useState('');
   const [isLucyStreaming, setIsLucyStreaming] = useState(false);
-  const [previousInteractionId, setPreviousInteractionId] = useState<string | null>(null);
+  const [previousInteractionId, setPreviousInteractionId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.chatInteractionId) || null;
+    } catch {
+      return null;
+    }
+  });
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
 
   // Gemini API Key setting for local dev
@@ -351,13 +374,10 @@ export default function App() {
     };
   }, []);
 
-  // Mobile Hardware Back Gesture & Browser History API Synchronization (SPA Accessibility & Exit Guard)
+  // Mobile Hardware Back Gesture & Browser History API Synchronization (SPA Accessibility)
   const activeTabRef = useRef<ActiveTab>(activeTab);
-  const [isExitModalOpen, setIsExitModalOpen] = useState(false);
-  const [isAppExited, setIsAppExited] = useState(false);
-  const isExitModalOpenRef = useRef(false);
 
-  const isAnyNonExitModalOpen =
+  const isAnyModalOpen =
     isTxModalOpen ||
     isSmartParseModalOpen ||
     isBudgetModalOpen ||
@@ -369,29 +389,18 @@ export default function App() {
     isAiKeyModalOpen ||
     Boolean(confirmDialog);
 
-  const isAnyNonExitModalOpenRef = useRef(isAnyNonExitModalOpen);
+  const isAnyModalOpenRef = useRef(isAnyModalOpen);
   useEffect(() => {
-    isAnyNonExitModalOpenRef.current = isAnyNonExitModalOpen;
-  }, [isAnyNonExitModalOpen]);
-
-  useEffect(() => {
-    isExitModalOpenRef.current = isExitModalOpen;
-  }, [isExitModalOpen]);
+    isAnyModalOpenRef.current = isAnyModalOpen;
+  }, [isAnyModalOpen]);
 
   useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
 
   useEffect(() => {
-    // Initialize 2-entry root structure on mount:
-    // Index 0 = 'root-guard', Index 1 = 'base' (Dashboard).
-    // IMPORTANT: Do NOT overwrite Index 1 on pointerdown, so user taps on Dashboard naturally grant User Activation to Index 1!
+    // Mark initial entry as 'base' (Dashboard) using replaceState so no unactivated entries are added on mount
     window.history.replaceState(
-      { mylucy: true, tab: 'dashboard', role: 'root-guard' },
-      '',
-      `${window.location.pathname}#dashboard`
-    );
-    window.history.pushState(
       { mylucy: true, tab: 'dashboard', role: 'base' },
       '',
       `${window.location.pathname}#dashboard`
@@ -407,7 +416,7 @@ export default function App() {
       return;
     }
 
-    // If user is on a sub-tab and taps Dashboard (or <- back arrow), pop the sub-tab entry back to Index 1 ('base')
+    // If user is on a sub-tab and taps Dashboard (or <- back arrow), pop the sub-tab entry back to 'base'
     if (nextTab === 'dashboard') {
       activeTabRef.current = 'dashboard';
       setActiveTab('dashboard');
@@ -415,8 +424,8 @@ export default function App() {
 
       if (window.history.state?.mylucy && window.history.state?.role === 'tab') {
         window.history.back();
-      } else if (window.history.state?.role !== 'base') {
-        window.history.pushState(
+      } else {
+        window.history.replaceState(
           { mylucy: true, tab: 'dashboard', role: 'base' },
           '',
           `${window.location.pathname}#dashboard`
@@ -431,14 +440,14 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     if (prevTab === 'dashboard') {
-      // Push single entry from Index 1 ('base') -> Index 2 ('tab') inside click event
+      // Push single entry from 'base' -> 'tab' inside genuine user click event
       window.history.pushState(
         { mylucy: true, tab: nextTab, role: 'tab' },
         '',
         `${window.location.pathname}#${nextTab}`
       );
     } else {
-      // Switching from one sub-tab to another sub-tab: replace at Index 2 so Back always returns directly to Dashboard
+      // Switching from one sub-tab to another sub-tab: replace at 'tab' so Back always returns directly to Dashboard
       window.history.replaceState(
         { mylucy: true, tab: nextTab, role: 'tab' },
         '',
@@ -448,9 +457,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const handlePopState = (e: PopStateEvent) => {
-      // Priority 1: If any form/confirmation modal is open when popstate fires, close modal and stay on current tab
-      if (isAnyNonExitModalOpenRef.current) {
+    const handlePopState = () => {
+      // Priority 1: If any modal is open when popstate fires, close modal and stay on current tab
+      if (isAnyModalOpenRef.current) {
         setIsTxModalOpen(false);
         setIsSmartParseModalOpen(false);
         setIsBudgetModalOpen(false);
@@ -475,92 +484,18 @@ export default function App() {
         return;
       }
 
-      // Priority 2: User is on a sub-view (e.g., Kelola Dompet, Budget, Riwayat, Lucy AI, Kategori) -> Always return to Dashboard
+      // Priority 2: User is on a sub-view (e.g., Kelola Dompet, Budget, Riwayat, Lucy AI, Kategori) -> Return to Dashboard
       if (activeTabRef.current !== 'dashboard') {
         activeTabRef.current = 'dashboard';
         setActiveTab('dashboard');
         window.scrollTo({ top: 0, behavior: 'smooth' });
-
-        // If browser skipped 'base' and landed on 'root-guard', restore 'base' so next Back triggers Exit Modal
-        if (!e.state?.mylucy || e.state?.role === 'root-guard') {
-          window.history.replaceState(
-            { mylucy: true, tab: 'dashboard', role: 'root-guard' },
-            '',
-            `${window.location.pathname}#dashboard`
-          );
-          window.history.pushState(
-            { mylucy: true, tab: 'dashboard', role: 'base' },
-            '',
-            `${window.location.pathname}#dashboard`
-          );
-        }
         return;
       }
-
-      // Priority 3: User is ALREADY on the root Dashboard view and swiped Hardware Back
-      if (isExitModalOpenRef.current) {
-        // User swiped Back a second time while Exit Modal was open -> close modal and let OS exit from Index 0
-        setIsExitModalOpen(false);
-        setIsAppExited(true);
-        return;
-      }
-
-      // Keep history at Index 0 ('root-guard') while Exit Confirmation Dialog is shown
-      setIsExitModalOpen(true);
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
-
-  function handleStayInApp() {
-    setIsExitModalOpen(false);
-    // Called inside a synchronous user click event -> pushes user-activated Index 1 ('base')
-    window.history.replaceState(
-      { mylucy: true, tab: 'dashboard', role: 'root-guard' },
-      '',
-      `${window.location.pathname}#dashboard`
-    );
-    window.history.pushState(
-      { mylucy: true, tab: 'dashboard', role: 'base' },
-      '',
-      `${window.location.pathname}#dashboard`
-    );
-  }
-
-  function handleConfirmExitApp() {
-    setIsExitModalOpen(false);
-    setIsAppExited(true);
-
-    // Attempt native window close (works in WebViews / popup contexts)
-    try {
-      window.close();
-    } catch {
-      // Ignore if blocked by mobile browser security
-    }
-
-    // If user navigated to MyLucy from an external referrer in the same tab, go back to it
-    if (document.referrer && window.history.length > 1) {
-      window.history.back();
-    }
-  }
-
-  function handleReopenApp() {
-    setIsAppExited(false);
-    setIsExitModalOpen(false);
-    activeTabRef.current = 'dashboard';
-    setActiveTab('dashboard');
-    window.history.replaceState(
-      { mylucy: true, tab: 'dashboard', role: 'root-guard' },
-      '',
-      `${window.location.pathname}#dashboard`
-    );
-    window.history.pushState(
-      { mylucy: true, tab: 'dashboard', role: 'base' },
-      '',
-      `${window.location.pathname}#dashboard`
-    );
-  }
 
   // Persist to localStorage (Offline-First queue/cache)
   useEffect(() => {
@@ -586,6 +521,26 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.offlineQueue, JSON.stringify(offlineQueue));
   }, [offlineQueue]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.chatMessages, JSON.stringify(chatMessages));
+    } catch {
+      // Ignore storage errors
+    }
+  }, [chatMessages]);
+
+  useEffect(() => {
+    try {
+      if (previousInteractionId) {
+        localStorage.setItem(STORAGE_KEYS.chatInteractionId, previousInteractionId);
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.chatInteractionId);
+      }
+    } catch {
+      // Ignore storage errors
+    }
+  }, [previousInteractionId]);
 
   // Flush Offline Queue when back online
   useEffect(() => {
@@ -1578,6 +1533,21 @@ export default function App() {
     }
   }
 
+  function handleResetChatHistory() {
+    if (chatMessages.length <= 1 || isLucyStreaming) return;
+    setConfirmDialog({
+      title: 'Konfirmasi Reset Riwayat Chat AI',
+      message: 'Apakah Anda yakin ingin menghapus seluruh histori percakapan dengan Lucy AI?',
+      detail: `${chatMessages.length - 1} pesan percakapan akan dihapus dan sesi konsultasi akan dimulai kembali dari awal.`,
+      confirmLabel: 'Ya, Reset History',
+      onConfirm: () => {
+        setChatMessages([createInitialLucyWelcomeMessage()]);
+        setPreviousInteractionId(null);
+        setConfirmDialog(null);
+      }
+    });
+  }
+
   function handleDeleteTransaction(id: string) {
     const targetTx = transactions.find((t) => t.id === id);
     setConfirmDialog({
@@ -1710,7 +1680,7 @@ export default function App() {
       message:
         'Apakah Anda yakin ingin menghapus seluruh data contoh/catatan saat ini dan memulai ulang dari saldo Rp 0?',
       detail:
-        'Seluruh riwayat transaksi, alokasi anggaran, serta catatan hutang dan piutang pada perangkat ini akan dikosongkan secara permanen. Saldo awal seluruh dompet akan diatur menjadi Rp 0.',
+        'Seluruh riwayat transaksi, alokasi anggaran, catatan hutang/piutang, serta riwayat chat AI pada perangkat ini akan dikosongkan secara permanen. Saldo awal seluruh dompet akan diatur menjadi Rp 0.',
       confirmLabel: 'Ya, Reset Seluruh Data',
       onConfirm: async () => {
         const zeroWallets = DEFAULT_WALLETS.map((w) => ({ ...w, initial_balance: 0 }));
@@ -1720,6 +1690,8 @@ export default function App() {
         setWallets(zeroWallets);
         setCategories(DEFAULT_CATEGORIES);
         setOfflineQueue([]);
+        setChatMessages([createInitialLucyWelcomeMessage()]);
+        setPreviousInteractionId(null);
         setConfirmDialog(null);
       }
     });
@@ -1766,37 +1738,6 @@ export default function App() {
     e.preventDefault();
     setSavedGeminiApiKey(geminiKeyInput);
     setIsAiKeyModalOpen(false);
-  }
-
-  if (isAppExited) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center select-none">
-        <div className="max-w-sm w-full rounded-3xl bg-slate-900/90 border border-slate-800 p-7 shadow-2xl space-y-5">
-          <div className="mx-auto h-16 w-16 rounded-2xl overflow-hidden shadow-lg shadow-indigo-500/20 border border-violet-500/30">
-            <img src="/logo.png" alt="MyLucy Logo" className="h-full w-full object-cover" />
-          </div>
-          <div className="space-y-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3 py-1 text-[11px] font-bold text-emerald-300">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Data Tersimpan Aman ({APP_VERSION})
-            </span>
-            <h1 className="text-lg font-extrabold tracking-tight text-white">
-              Sesi MyLucy Telah Ditutup
-            </h1>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Seluruh catatan transaksi, saldo dompet, dan anggaran Anda sudah tersimpan otomatis di perangkat ini. Silakan usap kembali (*swipe back*) sekali lagi atau tutup tab browser Anda.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleReopenApp}
-            className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 py-3 px-4 text-xs sm:text-sm font-semibold text-white shadow-lg shadow-indigo-600/25 transition-colors cursor-pointer"
-          >
-            Buka Kembali MyLucy
-          </button>
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -3408,21 +3349,36 @@ export default function App() {
 
               {/* Right Column: Interactive Streaming Chat */}
               <div className="lg:col-span-8 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col h-[560px]">
-                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-sm font-bold text-slate-900">
+                <div className="px-4 sm:px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-sm font-bold text-slate-900 truncate">
                       Ruang Konsultasi Keuangan
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsAiKeyModalOpen(true)}
-                    className="text-xs font-medium text-indigo-600 hover:text-indigo-500 flex items-center gap-1 cursor-pointer"
-                  >
-                    <KeyRound className="h-3.5 w-3.5" />
-                    {getSavedGeminiApiKey() ? 'Gemini API Aktif' : 'Atur API Key'}
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={chatMessages.length <= 1 || isLucyStreaming}
+                      onClick={handleResetChatHistory}
+                      title="Hapus histori percakapan AI"
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 hover:border-rose-200 bg-slate-50 hover:bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:text-rose-600 transition-colors cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      <span>Reset History</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsAiKeyModalOpen(true)}
+                      className="text-xs font-medium text-indigo-600 hover:text-indigo-500 flex items-center gap-1 cursor-pointer"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">
+                        {getSavedGeminiApiKey() ? 'Gemini API Aktif' : 'Atur API Key'}
+                      </span>
+                      <span className="sm:hidden">API Key</span>
+                    </button>
+                  </div>
                 </div>
 
                 {!isOnline && (
@@ -4865,61 +4821,6 @@ export default function App() {
           </div>
         )}
       </ModalDialog>
-
-      {/* MODAL 11: KONFIRMASI KELUAR APLIKASI (NON-CLOSEWATCHER OVERLAY FOR MOBILE HARDWARE BACK) */}
-      {isExitModalOpen && (
-        <div
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="exit-app-dialog-title"
-          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
-        >
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 text-slate-900 shadow-2xl border border-slate-200/90 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h2 id="exit-app-dialog-title" className="text-base sm:text-lg font-bold text-slate-900">
-                Keluar dari Aplikasi MyLucy
-              </h2>
-              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-500">
-                {APP_VERSION}
-              </span>
-            </div>
-
-            <div className="flex items-start gap-3.5">
-              <img
-                src="/logo.png"
-                alt="MyLucy Logo"
-                className="h-11 w-11 shrink-0 rounded-2xl object-cover shadow-md border border-violet-500/30"
-              />
-              <div className="space-y-1.5">
-                <p className="text-sm font-bold text-slate-900 leading-relaxed">
-                  Apakah Anda yakin ingin menutup dan keluar dari aplikasi MyLucy?
-                </p>
-                <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2 leading-relaxed">
-                  Seluruh catatan transaksi, saldo dompet, serta pengaturan anggaran Anda telah tersimpan otomatis di perangkat ini.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={handleStayInApp}
-                className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 py-2.5 px-4 text-xs sm:text-sm font-semibold text-white shadow-sm transition-colors cursor-pointer"
-              >
-                Tetap di Aplikasi
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmExitApp}
-                className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 py-2.5 px-4 text-xs sm:text-sm font-semibold text-white shadow-sm transition-colors cursor-pointer"
-              >
-                <LogOut className="h-4 w-4" />
-                Ya, Keluar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
