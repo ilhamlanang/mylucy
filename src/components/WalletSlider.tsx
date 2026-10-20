@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, CreditCard, Wallet as WalletIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CreditCard, SlidersHorizontal, Wallet as WalletIcon } from 'lucide-react';
 import { Wallet } from '../types/finance';
 import { formatIDR } from '../lib/supabase';
 
@@ -128,9 +128,11 @@ export const WalletSlider: React.FC<WalletSliderProps> = ({
           <button
             type="button"
             onClick={onManageWallets}
-            className="text-xs font-semibold text-indigo-600 hover:text-indigo-500 ml-2 cursor-pointer"
+            title="Kelola Dompet"
+            aria-label="Kelola Dompet"
+            className="p-1.5 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
           >
-            Kelola Dompet &rarr;
+            <SlidersHorizontal className="h-5 w-5" />
           </button>
         </div>
       </div>
