@@ -2264,15 +2264,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* App Version Capsule Badge (Mobile & Desktop) */}
-            <span
-              title={`MyLucy Personal Finance PWA ${APP_VERSION}`}
-              className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 border border-slate-200/80 px-2.5 py-1 text-[11px] font-bold tracking-tight text-slate-600 select-none"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
-              {APP_VERSION}
-            </span>
-
             {/* Top-Right Settings Button (Mobile & Desktop) */}
             <button
               type="button"
@@ -2366,6 +2357,18 @@ export default function App() {
                   </span>
                   <span className="text-[10px] font-medium text-rose-500">Bersihkan</span>
                 </button>
+
+                {/* App Version Info */}
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                  <span className="font-medium">Versi Aplikasi</span>
+                  <span
+                    title={`MyLucy Personal Finance PWA ${APP_VERSION}`}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 border border-slate-200/80 px-2.5 py-0.5 text-[10px] font-bold text-slate-600 select-none"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    {APP_VERSION}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
