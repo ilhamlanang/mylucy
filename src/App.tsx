@@ -2377,7 +2377,7 @@ export default function App() {
         <main className="max-w-6xl mx-auto px-4 sm:px-8 pt-6 space-y-6">
           {/* PHASE 3: PROACTIVE BUDGET & DEBT DUE WARNING BANNER (DISMISSIBLE) */}
           {totalAlertCount > 0 && !isWarningDismissed && (activeTab === 'dashboard' || activeTab === 'budgets') && (
-            <div className="rounded-2xl bg-gradient-to-r from-amber-50 via-orange-50 to-rose-50 border border-amber-200/90 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative">
+            <div className="rounded-2xl warning-banner-adaptive border p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative">
               <div className="flex items-start gap-3.5 pr-8 sm:pr-0">
                 <div className="h-10 w-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
                   <BellRing className="h-5 w-5 text-amber-600" />
