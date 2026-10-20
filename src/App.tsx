@@ -3484,7 +3484,18 @@ export default function App() {
                             : 'bg-slate-100 text-slate-800 rounded-bl-xs'
                         }`}
                       >
-                        <p>{msg.text || 'Sedang menganalisis data keuanganmu...'}</p>
+                        {msg.text ? (
+                          <p>{msg.text}</p>
+                        ) : (
+                          <div className="flex items-center gap-1.5 py-1">
+                            <span className="h-2 w-2 rounded-full bg-indigo-500 animate-bounce [animation-delay:-0.3s]" />
+                            <span className="h-2 w-2 rounded-full bg-indigo-500 animate-bounce [animation-delay:-0.15s]" />
+                            <span className="h-2 w-2 rounded-full bg-indigo-500 animate-bounce" />
+                            <span className="text-xs text-slate-500 font-medium ml-1.5">
+                              Lucy sedang mengetik...
+                            </span>
+                          </div>
+                        )}
                         <div
                           className={`mt-1.5 flex items-center justify-end gap-2 text-[10px] ${
                             msg.role === 'user' ? 'text-indigo-200' : 'text-slate-400'

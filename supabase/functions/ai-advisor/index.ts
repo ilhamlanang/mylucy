@@ -32,7 +32,7 @@ Deno.serve(async (req: Request) => {
       `${JSON.stringify(financialSummary, null, 2)}`;
 
     const interaction = await client.interactions.create({
-      model: 'gemini-3.8-flash',
+      model: 'gemini-3.5-flash-lite',
       system_instruction: systemPrompt,
       input: question,
       ...(previousInteractionId ? { previous_interaction_id: previousInteractionId } : {})

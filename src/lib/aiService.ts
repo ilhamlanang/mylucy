@@ -281,41 +281,63 @@ export async function streamLucyAdvisorResponse(
       )
       .join('; ')}${debtInfoText}`;
 
-  // 1. Try @google/genai Streaming Interactions API (gemini-3.8-flash) if key is configured
+  // Helper with strict timeout to prevent long delays / slow UX
+  const withTimeout = <T>(promise: Promise<T>, timeoutMs = 3500): Promise<T> => {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error('AI request timeout')), timeoutMs)
+      )
+    ]);
+  };
+
+  // 1. Try @google/genai Streaming Interactions API (gemini-3.5-flash-lite for ultra-low latency) if key is configured
   const apiKey = getSavedGeminiApiKey();
   if (apiKey) {
-    const client = new GoogleGenAI({ apiKey });
-    const stream = await client.interactions.create({
-      model: 'gemini-3.8-flash',
-      system_instruction: systemPrompt,
-      input: question,
-      ...(previousInteractionId ? { previous_interaction_id: previousInteractionId } : {}),
-      stream: true
-    });
+    try {
+      const client = new GoogleGenAI({ apiKey });
+      const stream = await withTimeout(
+        client.interactions.create({
+          model: 'gemini-3.5-flash-lite',
+          system_instruction: systemPrompt,
+          input: question,
+          ...(previousInteractionId ? { previous_interaction_id: previousInteractionId } : {}),
+          stream: true
+        }),
+        3500
+      );
 
-    let fullText = '';
-    let newInteractionId: string | null = null;
+      let fullText = '';
+      let newInteractionId: string | null = null;
 
-    for await (const event of stream) {
-      if (event.event_type === 'interaction.created' && event.interaction?.id) {
-        newInteractionId = event.interaction.id;
-      } else if (event.event_type === 'step.delta' && event.delta?.type === 'text' && event.delta.text) {
-        fullText += event.delta.text;
-        onDelta(event.delta.text);
-      } else if (event.event_type === 'interaction.completed' && event.interaction?.id) {
-        newInteractionId = event.interaction.id;
+      for await (const event of stream) {
+        if (event.event_type === 'interaction.created' && event.interaction?.id) {
+          newInteractionId = event.interaction.id;
+        } else if (event.event_type === 'step.delta' && event.delta?.type === 'text' && event.delta.text) {
+          fullText += event.delta.text;
+          onDelta(event.delta.text);
+        } else if (event.event_type === 'interaction.completed' && event.interaction?.id) {
+          newInteractionId = event.interaction.id;
+        }
       }
-    }
 
-    return { fullText, interactionId: newInteractionId, engine: 'gemini-3.8-flash' };
+      if (fullText.trim()) {
+        return { fullText, interactionId: newInteractionId, engine: 'gemini-3.5-flash-lite' };
+      }
+    } catch {
+      // Fallback quickly on error or timeout
+    }
   }
 
-  // 2. Try Supabase Edge Function if configured
+  // 2. Try Supabase Edge Function with 3.5s timeout if configured
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data, error } = await supabase.functions.invoke('ai-advisor', {
-        body: { question, financialSummary: context, previousInteractionId }
-      });
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('ai-advisor', {
+          body: { question, financialSummary: context, previousInteractionId }
+        }),
+        3500
+      );
       if (!error && data?.reply) {
         onDelta(data.reply);
         return {
@@ -378,14 +400,14 @@ export async function streamLucyAdvisorResponse(
       `• **Fokus Sekarang**: ${ds && ds.unpaidMonthlyObligation > 0 ? `Amankan **${formatIDR(ds.unpaidMonthlyObligation)}** buat cicilan yang belum lunas bulan ini biar sisa uang jajanmu riil.` : 'Pertahankan ritme belanjamu, surplusnya bisa langsung parkir ke tabungan.'}`;
   }
 
-  // Stream word by word for realistic < 100ms TTFT UX
+  // Stream word by word for realistic & snappy < 50ms TTFT UX
   const words = simulatedReply.split(' ');
   let accumulated = '';
   for (let i = 0; i < words.length; i++) {
     const chunk = (i === 0 ? '' : ' ') + words[i];
     accumulated += chunk;
     onDelta(chunk);
-    await new Promise((r) => setTimeout(r, 14));
+    await new Promise((r) => setTimeout(r, 8));
   }
 
   return { fullText: accumulated, interactionId: null, engine: 'local-Contextual-AI' };
