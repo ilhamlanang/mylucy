@@ -5,6 +5,7 @@ import {
   ChevronUp,
   LineChart,
   PieChart,
+  SlidersHorizontal,
   TrendingUp
 } from 'lucide-react';
 import { Transaction } from '../types/finance';
@@ -131,9 +132,11 @@ export const CashFlowChart: React.FC<CashFlowChartProps> = ({
           <button
             type="button"
             onClick={onOpenBudgets}
-            className="text-xs font-semibold text-indigo-600 hover:text-indigo-500 cursor-pointer shrink-0"
+            title="Atur Budget"
+            aria-label="Atur Budget"
+            className="p-1.5 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer shrink-0"
           >
-            Atur Budget &rarr;
+            <SlidersHorizontal className="h-5 w-5" />
           </button>
         </div>
 
