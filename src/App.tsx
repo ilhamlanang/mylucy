@@ -139,6 +139,47 @@ function createInitialLucyWelcomeMessage(): ChatMessage {
   };
 }
 
+function renderFormattedMessage(text: string, isUser = false): React.ReactNode {
+  if (!text) return null;
+
+  // Split by bold (**...**), italic (*...*), and inline code (`...`)
+  const regex = /(\*\*[^*]+?\*\*|\*[^*]+?\*|`[^`]+?`)/g;
+  const parts = text.split(regex);
+
+  return parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
+      return (
+        <strong
+          key={index}
+          className={`font-bold ${isUser ? 'text-white' : 'text-slate-900'}`}
+        >
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (part.startsWith('*') && part.endsWith('*') && part.length >= 2) {
+      return (
+        <em key={index} className="italic text-inherit">
+          {part.slice(1, -1)}
+        </em>
+      );
+    }
+    if (part.startsWith('`') && part.endsWith('`') && part.length >= 2) {
+      return (
+        <code
+          key={index}
+          className={`rounded px-1 py-0.5 text-xs font-mono ${
+            isUser ? 'bg-indigo-700/60 text-white' : 'bg-slate-200/80 text-slate-900'
+          }`}
+        >
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return part;
+  });
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [budgetSubView, setBudgetSubView] = useState<BudgetSubView>('all');
@@ -3485,7 +3526,7 @@ export default function App() {
                         }`}
                       >
                         {msg.text ? (
-                          <p>{msg.text}</p>
+                          <p>{renderFormattedMessage(msg.text, msg.role === 'user')}</p>
                         ) : (
                           <div className="flex items-center gap-1.5 py-1">
                             <span className="h-2 w-2 rounded-full bg-indigo-500 animate-bounce [animation-delay:-0.3s]" />
