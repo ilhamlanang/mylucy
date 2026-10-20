@@ -69,7 +69,7 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
       ref={dialogRef}
       closedby={closedBy}
       aria-labelledby={titleId}
-      className="m-auto w-[calc(100%-2rem)] max-w-lg max-h-[90dvh] flex flex-col rounded-2xl bg-white p-0 text-slate-900 shadow-2xl border border-slate-100 open:animate-in open:fade-in open:zoom-in-95 duration-150"
+      className="m-auto w-[calc(100%-2rem)] max-w-lg max-h-[90dvh] overflow-hidden rounded-2xl bg-white p-0 text-slate-900 shadow-2xl border border-slate-100 open:animate-in open:fade-in open:zoom-in-95 duration-150"
     >
       <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 shrink-0">
         <h2 id={titleId} className="text-lg font-bold text-slate-900">

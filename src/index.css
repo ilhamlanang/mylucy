@@ -169,6 +169,15 @@ textarea {
 }
 
 /* Modern Web Guidance: Prevent Page Scroll Under Modal Dialog & Light-Dismiss */
+dialog:not([open]) {
+  display: none !important;
+}
+
+dialog[open] {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
 dialog:modal {
   overscroll-behavior: contain;
   background-color: light-dark(#ffffff, #111827);
