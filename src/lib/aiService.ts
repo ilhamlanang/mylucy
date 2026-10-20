@@ -78,83 +78,112 @@ export async function parseTransactionText(
   const categoryNames = categories.map((c) => c.name);
   const today = new Date().toISOString().slice(0, 10);
 
+  // Helper with 4.5s timeout to prevent UI freeze on slow networks
+  const withTimeout = <T>(promise: Promise<T>, timeoutMs = 4500): Promise<T> => {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error('AI request timeout')), timeoutMs)
+      )
+    ]);
+  };
+
   // 1. Try Supabase Edge Function if configured
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data, error } = await supabase.functions.invoke('ai-parse', {
-        body: { rawText, categories: categoryNames }
-      });
-      if (!error && data && data.amount) {
-        return { ...data, engine: 'supabase-edge' };
+      const response = await withTimeout(
+        supabase.functions.invoke('ai-parse', {
+          body: { rawText, categories: categoryNames }
+        })
+      );
+      if (!response.error && response.data && response.data.amount) {
+        return { ...response.data, engine: 'supabase-edge' };
       }
     } catch {
-      // Fallback to SDK or local parser
+      // Fallback to SDK or local parser immediately
     }
   }
 
   // 2. Use @google/genai Interactions API with gemini-3.8-flash & Structured Output
   const apiKey = getSavedGeminiApiKey();
   if (apiKey) {
-    const client = new GoogleGenAI({ apiKey });
-    const interaction = await client.interactions.create({
-      model: 'gemini-3.8-flash',
-      system_instruction:
-        `Kamu adalah mesin parser transaksi perbankan dan e-wallet Indonesia (GoPay, OVO, ShopeePay, QRIS, BCA, Mandiri, BRI). ` +
-        `Ekstrak nominal (angka bulat Rupiah), nama merchant, tanggal transaksi (YYYY-MM-DD, default ${today} jika tidak ada), ` +
-        `jenis transaksi ('income' atau 'expense'), serta pilih nama kategori yang paling cocok dari daftar: [${categoryNames.join(', ')}].`,
-      input: rawText,
-      response_format: {
-        type: 'text',
-        mime_type: 'application/json',
-        schema: {
-          type: 'object',
-          properties: {
-            amount: { type: 'integer', description: 'Nominal transaksi dalam angka bulat Rupiah (IDR)' },
-            merchant: { type: 'string', description: 'Nama merchant, toko, atau pengirim' },
-            category_name: { type: 'string', description: 'Nama kategori yang paling sesuai' },
-            type: { type: 'string', enum: ['income', 'expense'] },
-            transaction_date: { type: 'string', description: 'Format YYYY-MM-DD' },
-            description: { type: 'string', description: 'Deskripsi singkat transaksi' },
-            confidence: { type: 'number', description: 'Skor akurasi 0.0 - 1.0' }
-          },
-          required: ['amount', 'merchant', 'category_name', 'type', 'transaction_date', 'description', 'confidence']
-        }
-      }
-    });
+    try {
+      const client = new GoogleGenAI({ apiKey });
+      const interaction = await withTimeout(
+        client.interactions.create({
+          model: 'gemini-3.8-flash',
+          system_instruction:
+            `Kamu adalah mesin parser transaksi perbankan dan e-wallet Indonesia (GoPay, OVO, ShopeePay, QRIS, BCA, Mandiri, BRI). ` +
+            `Ekstrak nominal (angka bulat Rupiah), nama merchant, tanggal transaksi (YYYY-MM-DD, default ${today} jika tidak ada), ` +
+            `jenis transaksi ('income' atau 'expense'), serta pilih nama kategori yang paling cocok dari daftar: [${categoryNames.join(', ')}].`,
+          input: rawText,
+          response_format: {
+            type: 'text',
+            mime_type: 'application/json',
+            schema: {
+              type: 'object',
+              properties: {
+                amount: { type: 'integer', description: 'Nominal transaksi dalam angka bulat Rupiah (IDR)' },
+                merchant: { type: 'string', description: 'Nama merchant, toko, atau pengirim' },
+                category_name: { type: 'string', description: 'Nama kategori yang paling sesuai' },
+                type: { type: 'string', enum: ['income', 'expense'] },
+                transaction_date: { type: 'string', description: 'Format YYYY-MM-DD' },
+                description: { type: 'string', description: 'Deskripsi singkat transaksi' },
+                confidence: { type: 'number', description: 'Skor akurasi 0.0 - 1.0' }
+              },
+              required: ['amount', 'merchant', 'category_name', 'type', 'transaction_date', 'description', 'confidence']
+            }
+          }
+        })
+      );
 
-    const parsed = JSON.parse(interaction.output_text || '{}');
-    return {
-      amount: Number(parsed.amount) || 0,
-      merchant: parsed.merchant || 'Merchant',
-      category_name: parsed.category_name || categoryNames[0] || 'Makan & Minum',
-      type: parsed.type === 'income' ? 'income' : 'expense',
-      transaction_date: parsed.transaction_date || today,
-      description: parsed.description || rawText.slice(0, 60),
-      confidence: Number(parsed.confidence) || 0.95,
-      engine: 'gemini-sdk'
-    };
+      const parsed = JSON.parse(interaction.output_text || '{}');
+      if (parsed.amount) {
+        return {
+          amount: Number(parsed.amount) || 0,
+          merchant: parsed.merchant || 'Merchant',
+          category_name: parsed.category_name || categoryNames[0] || 'Makan & Minum',
+          type: parsed.type === 'income' ? 'income' : 'expense',
+          transaction_date: parsed.transaction_date || today,
+          description: parsed.description || rawText.slice(0, 60),
+          confidence: Number(parsed.confidence) || 0.95,
+          engine: 'gemini-sdk'
+        };
+      }
+    } catch {
+      // Fallback below
+    }
   }
 
-  // 3. Built-in Indonesian Mutasi Smart Parser (Instant Demo Fallback)
-  await new Promise((r) => setTimeout(r, 350));
+  // 3. Built-in Indonesian Mutasi Smart Parser (Instant Local Fallback < 150ms)
+  await new Promise((r) => setTimeout(r, 120));
   const lower = rawText.toLowerCase();
 
-  // Extract nominal (handles Rp45.000, Rp 3.500.000, IDR 165,000, 45rb, etc.)
+  // Extract nominal (handles Rp45.000, 45k, 45rb, 1.5jt, Rp 3.500.000, IDR 165,000, 25000, etc.)
   let amount = 0;
   const rpMatch = rawText.match(/(?:rp|idr)\.?\s*([0-9][0-9.,]*)/i);
-  const rbMatch = rawText.match(/([0-9]+)\s*(?:rb|ribu)/i);
+  const jtMatch = rawText.match(/([0-9]+(?:[.,][0-9]+)?)\s*(?:jt|juta)/i);
+  const rbMatch = rawText.match(/([0-9]+(?:[.,][0-9]+)?)\s*(?:rb|ribu|k)\b/i);
+  const dotNumMatch = rawText.match(/\b([0-9]{1,3}(?:\.[0-9]{3})+)\b/);
+
   if (rpMatch) {
     const cleaned = rpMatch[1].replace(/,[0-9]{2}$/, '').replace(/[^0-9]/g, '');
     amount = Number(cleaned) || 0;
+  } else if (jtMatch) {
+    const floatVal = parseFloat(jtMatch[1].replace(',', '.'));
+    amount = Math.round(floatVal * 1_000_000);
   } else if (rbMatch) {
-    amount = Number(rbMatch[1]) * 1000;
+    const floatVal = parseFloat(rbMatch[1].replace(',', '.'));
+    amount = Math.round(floatVal * 1000);
+  } else if (dotNumMatch) {
+    amount = Number(dotNumMatch[1].replace(/\./g, '')) || 0;
   } else {
     const genericNum = rawText.match(/\b([0-9]{4,9})\b/);
     if (genericNum) amount = Number(genericNum[1]);
   }
 
   // Determine income vs expense
-  const isIncome = /(transfer masuk|gaji|bonus|dana masuk|kredit|terima uang|cashback|pelunasan piutang)/i.test(lower);
+  const isIncome = /(transfer masuk|gaji|bonus|dana masuk|kredit|terima uang|cashback|pelunasan piutang|diterima)/i.test(lower);
   const type: TransactionType = isIncome ? 'income' : 'expense';
 
   // Determine category
@@ -164,42 +193,46 @@ export async function parseTransactionText(
   } else if (isIncome && /piutang|pinjam/i.test(lower)) {
     categoryName = 'Pelunasan Piutang';
   } else if (!isIncome) {
-    if (/kopi|janji jiwa|fore|starbucks|resto|makan|warung|gofood|grabfood|sate|ayam|bakso/i.test(lower)) {
+    if (/kopi|janji jiwa|fore|starbucks|chatime|mixue|resto|makan|warung|gofood|grabfood|sate|ayam|bakso|mie|nasi/i.test(lower)) {
       categoryName = 'Makan & Minum';
-    } else if (/goride|gocar|grab|mrt|krl|transjakarta|bensin|pertamina|shell|parkir|tol/i.test(lower)) {
+    } else if (/goride|gocar|grab|maxim|inドライブ|mrt|krl|transjakarta|bensin|pertamina|shell|parkir|tol/i.test(lower)) {
       categoryName = 'Transportasi';
     } else if (/spaylater|shopeepaylater|kredivo|akulaku|cicilan|kartu kredit|kpr|hutang|pinjaman/i.test(lower)) {
       categoryName = 'Cicilan & Hutang';
-    } else if (/pln|listrik|wifi|indihome|biznet|pulsa|telkomsel|bpjs|pdam|tagihan/i.test(lower)) {
+    } else if (/pln|listrik|wifi|indihome|biznet|pulsa|paket data|telkomsel|indosat|xl|tri|bpjs|pdam|tagihan/i.test(lower)) {
       categoryName = 'Tagihan & Utilitas';
-    } else if (/uniqlo|shopee|tokopedia|alfamart|indomaret|superindo|mall|belanja/i.test(lower)) {
+    } else if (/uniqlo|zara|h&m|shopee|tokopedia|tiktok shop|lazada|alfamart|indomaret|superindo|mall|belanja/i.test(lower)) {
       categoryName = 'Belanja';
-    } else if (/netflix|spotify|bioskop|xxi|cgv|game|steam/i.test(lower)) {
+    } else if (/netflix|spotify|youtube|bioskop|xxi|cgv|cinepolis|game|steam|playstation/i.test(lower)) {
       categoryName = 'Hiburan';
-    } else if (/bibit|reksadana|emas|tabungan|deposito/i.test(lower)) {
+    } else if (/bibit|bareksa|ajaib|reksadana|emas|tabungan|deposito|saham/i.test(lower)) {
       categoryName = 'Tabungan & Investasi';
     }
   }
 
   // Extract merchant
   let merchant = 'Transaksi Otomatis';
-  const merchPattern = rawText.match(/(?:at|di|ke|dari)\s+([A-Za-z0-9\s.&'-]{3,35}?)(?:\s+berhasil|\s+pada|\s+sebesar|\s*\(|$)/i);
-  if (merchPattern && merchPattern[1]) {
+  const merchPattern = rawText.match(/(?:at|di|ke|dari|beli|bayar)\s+([A-Za-z0-9\s.&'-]{2,30}?)(?:\s+berhasil|\s+pada|\s+sebesar|\s*\(|\s*Rp|\s*[0-9]|$)/i);
+  if (merchPattern && merchPattern[1] && merchPattern[1].trim()) {
     merchant = merchPattern[1].trim();
   } else if (/goride/i.test(lower)) {
     merchant = 'GoRide';
+  } else if (/gofood/i.test(lower)) {
+    merchant = 'GoFood';
   } else if (/pln/i.test(lower)) {
     merchant = 'PLN Prabayar';
+  } else if (/kopi janji jiwa/i.test(lower)) {
+    merchant = 'Kopi Janji Jiwa';
   }
 
   return {
-    amount: amount || 50000,
+    amount: amount || 25000,
     merchant,
     category_name: categoryName,
     type,
     transaction_date: today,
     description: rawText.trim(),
-    confidence: 0.92,
+    confidence: 0.95,
     engine: 'smart-heuristic'
   };
 }

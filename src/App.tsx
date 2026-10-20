@@ -37,7 +37,8 @@ import {
   Wallet as WalletIcon,
   Wand2,
   Wifi,
-  WifiOff
+  WifiOff,
+  X
 } from 'lucide-react';
 import {
   Budget,
@@ -104,9 +105,23 @@ const STORAGE_KEYS = {
   chatInteractionId: 'mylucy_chat_interaction_id_v1'
 };
 
-const APP_VERSION = 'v1.2.4';
+const APP_VERSION = 'v1.2.5';
 const PRESET_AMOUNTS = [15000, 25000, 50000, 100000, 250000, 500000];
 const COLOR_PALETTE = ['#4f46e5', '#0ea5e9', '#10b981', '#f97316', '#ec4899', '#8b5cf6', '#eab308', '#ef4444'];
+
+export function formatRupiahInput(raw: string | number, allowZero = false): string {
+  const digitsOnly = String(raw).replace(/[^0-9]/g, '');
+  if (!digitsOnly) return '';
+  const stripped = digitsOnly.replace(/^0+/, '');
+  if (!stripped) {
+    return allowZero ? 'Rp 0' : '';
+  }
+  return `Rp ${Number(stripped).toLocaleString('id-ID')}`;
+}
+
+export function parseRupiahInput(formatted: string): number {
+  return Number(String(formatted).replace(/[^0-9]/g, '')) || 0;
+}
 
 const LUCY_QUICK_PROMPTS = [
   'Cek kondisi dompet & arus kas aku bulan ini, aman ga?',
@@ -251,9 +266,12 @@ export default function App() {
   const [txDate, setTxDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [txSource, setTxSource] = useState<'manual' | 'ai_parsed'>('manual');
 
+  // Notification Warning Banner state (Dismissible)
+  const [isWarningDismissed, setIsWarningDismissed] = useState(false);
+
   // Smart Budget Form state (Phase 3)
   const [budgetCatId, setBudgetCatId] = useState<string>('cat-food');
-  const [budgetLimitInput, setBudgetLimitInput] = useState<string>('2000000');
+  const [budgetLimitInput, setBudgetLimitInput] = useState<string>('Rp 2.000.000');
   const [budgetThresholdInput, setBudgetThresholdInput] = useState<string>('80');
   const [budgetDraftItems, setBudgetDraftItems] = useState<BudgetBreakdownItem[]>([]);
   const [draftItemLabel, setDraftItemLabel] = useState<string>('');
@@ -956,7 +974,7 @@ export default function App() {
   // Handlers
   async function handleAddTransaction(e: React.FormEvent) {
     e.preventDefault();
-    const numericAmount = Number(txAmount.replace(/[^0-9]/g, ''));
+    const numericAmount = parseRupiahInput(txAmount);
     if (!numericAmount || numericAmount <= 0) return;
 
     const newTx: Transaction = {
@@ -1009,7 +1027,7 @@ export default function App() {
   async function handleSaveBudget(e: React.FormEvent) {
     e.preventDefault();
     let finalItems = [...budgetDraftItems];
-    const pendingAmount = Number(draftItemAmount.replace(/[^0-9]/g, ''));
+    const pendingAmount = parseRupiahInput(draftItemAmount);
     if (draftItemLabel.trim() && pendingAmount > 0) {
       finalItems = [
         ...finalItems,
@@ -1023,7 +1041,7 @@ export default function App() {
     }
 
     const itemsSum = finalItems.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-    const manualLimit = Number(budgetLimitInput.replace(/[^0-9]/g, ''));
+    const manualLimit = parseRupiahInput(budgetLimitInput);
     const limitNum = finalItems.length > 0 ? itemsSum : manualLimit;
     const thresholdNum = Math.min(Math.max(Number(budgetThresholdInput) || 80, 10), 100);
     if (!limitNum || limitNum <= 0) return;
@@ -1074,13 +1092,13 @@ export default function App() {
     setBudgetDraftItems(existingItems);
     setDraftItemLabel('');
     setDraftItemAmount('');
-    setBudgetLimitInput(String(existingItems.length > 0 ? itemsSum : currentLimit || 1500000));
+    setBudgetLimitInput(formatRupiahInput(existingItems.length > 0 ? itemsSum : currentLimit || 1500000));
     setBudgetThresholdInput(String(currentThreshold || 80));
     setIsBudgetModalOpen(true);
   }
 
   function handleAddDraftBudgetItem() {
-    const amt = Number(draftItemAmount.replace(/[^0-9]/g, ''));
+    const amt = parseRupiahInput(draftItemAmount);
     if (!draftItemLabel.trim() || amt <= 0) return;
     const nextItems: BudgetBreakdownItem[] = [
       ...budgetDraftItems,
@@ -1093,7 +1111,7 @@ export default function App() {
     ];
     setBudgetDraftItems(nextItems);
     const nextSum = nextItems.reduce((sum, item) => sum + item.amount, 0);
-    setBudgetLimitInput(String(nextSum));
+    setBudgetLimitInput(formatRupiahInput(nextSum));
     setDraftItemLabel('');
     setDraftItemAmount('');
   }
@@ -1103,14 +1121,14 @@ export default function App() {
     setBudgetDraftItems(nextItems);
     if (nextItems.length > 0) {
       const nextSum = nextItems.reduce((sum, item) => sum + item.amount, 0);
-      setBudgetLimitInput(String(nextSum));
+      setBudgetLimitInput(formatRupiahInput(nextSum));
     }
   }
 
   async function handleAddInlineBudgetItem(categoryId: string) {
     const input = inlineItemInputs[categoryId];
     if (!input) return;
-    const amt = Number(input.amount.replace(/[^0-9]/g, ''));
+    const amt = parseRupiahInput(input.amount);
     if (!input.label.trim() || amt <= 0) return;
 
     const existing = budgets.find((b) => b.category_id === categoryId);
@@ -1243,9 +1261,8 @@ export default function App() {
   // Debt & Receivable Handlers
   async function handleAddDebt(e: React.FormEvent) {
     e.preventDefault();
-    const totalNum = Number(debtTotalInput.replace(/[^0-9]/g, ''));
-    const installmentNum =
-      Number(debtInstallmentInput.replace(/[^0-9]/g, '')) || totalNum;
+    const totalNum = parseRupiahInput(debtTotalInput);
+    const installmentNum = parseRupiahInput(debtInstallmentInput) || totalNum;
     const dueDayNum = Math.min(Math.max(Number(debtDueDayInput) || 25, 1), 31);
     if (!debtTitle.trim() || !debtCounterparty.trim() || totalNum <= 0) return;
 
@@ -1344,7 +1361,7 @@ export default function App() {
   function openDebtPayModal(debt: DebtItem) {
     setSelectedDebtForPay(debt);
     const defaultPay = Math.min(debt.monthly_installment, debt.remaining_amount);
-    setDebtPayAmountInput(String(defaultPay));
+    setDebtPayAmountInput(formatRupiahInput(defaultPay));
     if (wallets.length > 0 && !wallets.some((w) => w.id === debtPayWalletId)) {
       setDebtPayWalletId(wallets[0].id);
     }
@@ -1354,7 +1371,7 @@ export default function App() {
   async function handleSettleDebtInstallment(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedDebtForPay) return;
-    const payNum = Number(debtPayAmountInput.replace(/[^0-9]/g, ''));
+    const payNum = parseRupiahInput(debtPayAmountInput);
     if (!payNum || payNum <= 0) return;
 
     const actualPay = Math.min(payNum, selectedDebtForPay.remaining_amount);
@@ -1421,7 +1438,7 @@ export default function App() {
   // Phase 2: Smart Parsing Handler
   async function handleRunSmartParse(e: React.FormEvent) {
     e.preventDefault();
-    if (!rawMutationText.trim() || !isOnline) return;
+    if (!rawMutationText.trim()) return;
 
     setIsParsingAi(true);
     setParseError(null);
@@ -1435,6 +1452,57 @@ export default function App() {
     } finally {
       setIsParsingAi(false);
     }
+  }
+
+  function handleQuickSaveParsedTransaction() {
+    if (!parsedPreview) return;
+
+    const matchedCat =
+      categories.find(
+        (c) =>
+          c.type === parsedPreview.type &&
+          c.name.toLowerCase() === parsedPreview.category_name.toLowerCase()
+      ) ||
+      categories.find((c) => c.type === parsedPreview.type) ||
+      categories[0];
+
+    const lowerRaw = rawMutationText.toLowerCase();
+    const matchedWallet =
+      wallets.find((w) => lowerRaw.includes(w.name.toLowerCase())) ||
+      (lowerRaw.includes('gopay') || lowerRaw.includes('shopeepay') || lowerRaw.includes('ovo')
+        ? wallets.find((w) => w.type === 'ewallet')
+        : wallets[0]) ||
+      wallets[0];
+
+    const newTx: Transaction = {
+      id: crypto.randomUUID(),
+      user_id: userId ?? undefined,
+      wallet_id: matchedWallet.id,
+      category_id: matchedCat.id,
+      amount: parsedPreview.amount,
+      type: parsedPreview.type,
+      merchant: parsedPreview.merchant.trim() || undefined,
+      description: parsedPreview.description.trim() || matchedCat.name || 'Transaksi AI',
+      transaction_date: parsedPreview.transaction_date,
+      source: 'ai_parsed',
+      created_at: new Date().toISOString()
+    };
+
+    setTransactions((prev) => [newTx, ...prev]);
+
+    if (supabase && userId) {
+      if (isOnline) {
+        supabase.from('transactions').insert([newTx]);
+      } else {
+        enqueueOfflineAction('transactions', 'upsert', newTx as unknown as Record<string, unknown>);
+      }
+    } else if (!isOnline) {
+      enqueueOfflineAction('transactions', 'upsert', newTx as unknown as Record<string, unknown>);
+    }
+
+    setIsSmartParseModalOpen(false);
+    setParsedPreview(null);
+    setRawMutationText('');
   }
 
   function handleApplyParsedResult() {
@@ -1458,7 +1526,7 @@ export default function App() {
       wallets[0];
 
     setTxType(parsedPreview.type);
-    setTxAmount(String(parsedPreview.amount));
+    setTxAmount(formatRupiahInput(parsedPreview.amount));
     setTxMerchant(parsedPreview.merchant);
     setTxDesc(parsedPreview.description);
     if (matchedCat) setTxCategoryId(matchedCat.id);
@@ -1641,7 +1709,7 @@ export default function App() {
       user_id: userId ?? undefined,
       name: walletName.trim(),
       type: walletType,
-      initial_balance: Number(walletInitialBalance.replace(/[^0-9]/g, '')) || 0,
+      initial_balance: parseRupiahInput(walletInitialBalance),
       color: walletColor
     };
 
@@ -1651,7 +1719,7 @@ export default function App() {
     }
 
     setWalletName('');
-    setWalletInitialBalance('0');
+    setWalletInitialBalance('');
     setIsWalletModalOpen(false);
   }
 
@@ -2304,10 +2372,10 @@ export default function App() {
         </header>
 
         <main className="max-w-6xl mx-auto px-4 sm:px-8 pt-6 space-y-6">
-          {/* PHASE 3: PROACTIVE BUDGET & DEBT DUE WARNING BANNER */}
-          {totalAlertCount > 0 && (activeTab === 'dashboard' || activeTab === 'budgets') && (
-            <div className="rounded-2xl bg-gradient-to-r from-amber-50 via-orange-50 to-rose-50 border border-amber-200/90 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-start gap-3.5">
+          {/* PHASE 3: PROACTIVE BUDGET & DEBT DUE WARNING BANNER (DISMISSIBLE) */}
+          {totalAlertCount > 0 && !isWarningDismissed && (activeTab === 'dashboard' || activeTab === 'budgets') && (
+            <div className="rounded-2xl bg-gradient-to-r from-amber-50 via-orange-50 to-rose-50 border border-amber-200/90 p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative">
+              <div className="flex items-start gap-3.5 pr-8 sm:pr-0">
                 <div className="h-10 w-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
                   <BellRing className="h-5 w-5 text-amber-600" />
                 </div>
@@ -2349,15 +2417,26 @@ export default function App() {
                   )}
                 </div>
               </div>
-              {activeTab !== 'budgets' && (
+              <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                {activeTab !== 'budgets' && (
+                  <button
+                    type="button"
+                    onClick={() => navigateToTab('budgets')}
+                    className="shrink-0 rounded-xl bg-amber-600 hover:bg-amber-500 px-3.5 py-2 text-xs font-semibold text-white transition-colors cursor-pointer"
+                  >
+                    Cek Budget & Cicilan &rarr;
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => navigateToTab('budgets')}
-                  className="shrink-0 rounded-xl bg-amber-600 hover:bg-amber-500 px-3.5 py-2 text-xs font-semibold text-white transition-colors cursor-pointer"
+                  onClick={() => setIsWarningDismissed(true)}
+                  title="Sembunyikan notifikasi peringatan"
+                  aria-label="Sembunyikan peringatan"
+                  className="rounded-xl p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/50 transition-colors cursor-pointer"
                 >
-                  Cek Budget & Cicilan &rarr;
+                  <X className="h-4 w-4" />
                 </button>
-              )}
+              </div>
             </div>
           )}
 
@@ -3250,15 +3329,15 @@ export default function App() {
                                   />
                                   <div className="flex items-center gap-1.5">
                                     <input
-                                      type="number"
-                                      min="1000"
+                                      type="text"
+                                      inputMode="numeric"
                                       value={inlineInput.amount}
                                       onChange={(e) =>
                                         setInlineItemInputs((prev) => ({
                                           ...prev,
                                           [cat.id]: {
                                             label: prev[cat.id]?.label || '',
-                                            amount: e.target.value
+                                            amount: formatRupiahInput(e.target.value)
                                           }
                                         }))
                                       }
@@ -3730,21 +3809,21 @@ export default function App() {
               htmlFor="tx-amount-input"
               className="block text-xs font-semibold uppercase tracking-wider text-slate-500"
             >
-              Nominal (Rp)
+              Nominal Transaksi (Rp)
             </label>
             <span id="tx-amount-hint" className="field-hint">
-              Masukkan angka bulat Rupiah tanpa titik (minimal Rp1)
+              Ketik angka secara langsung, format Rupiah akan terbentuk otomatis
             </span>
             <input
               id="tx-amount-input"
-              type="number"
+              type="text"
+              inputMode="numeric"
               required
-              min="1"
               value={txAmount}
-              onChange={(e) => setTxAmount(e.target.value)}
+              onChange={(e) => setTxAmount(formatRupiahInput(e.target.value))}
               aria-describedby="tx-amount-hint"
               aria-errormessage="tx-amount-error"
-              placeholder="Contoh: 45000"
+              placeholder="Contoh: Rp 45.000"
               className="w-full rounded-xl border border-slate-200 px-4 py-3 text-lg font-bold text-slate-900 focus:border-indigo-500 focus:outline-none"
               autoFocus
             />
@@ -3756,7 +3835,7 @@ export default function App() {
                 <button
                   key={preset}
                   type="button"
-                  onClick={() => setTxAmount(String(preset))}
+                  onClick={() => setTxAmount(formatRupiahInput(preset))}
                   className="rounded-lg bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 px-2.5 py-1 text-xs font-medium text-slate-600 transition-colors cursor-pointer"
                 >
                   +{preset / 1000}rb
@@ -3950,13 +4029,23 @@ export default function App() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleApplyParsedResult}
-                className="w-full rounded-xl bg-slate-900 hover:bg-slate-800 py-2.5 text-xs font-semibold text-white transition-colors cursor-pointer"
-              >
-                Lanjutkan & Simpan Transaksi &rarr;
-              </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleQuickSaveParsedTransaction}
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 py-2.5 px-3 text-xs font-bold text-white shadow-md transition-colors cursor-pointer"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  Simpan Langsung
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyParsedResult}
+                  className="w-full inline-flex items-center justify-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 py-2.5 px-3 text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
+                >
+                  Edit Detail &rarr;
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -3983,7 +4072,7 @@ export default function App() {
                 setBudgetCatId(nextCatId);
                 setBudgetDraftItems(existingItems);
                 setBudgetLimitInput(
-                  String(existingItems.length > 0 ? itemsSum : existing?.amount_limit || 1500000)
+                  formatRupiahInput(existingItems.length > 0 ? itemsSum : existing?.amount_limit || 1500000)
                 );
                 setBudgetThresholdInput(String(existing?.alert_threshold || 80));
               }}
@@ -4053,10 +4142,10 @@ export default function App() {
               />
               <div className="flex items-center gap-1.5">
                 <input
-                  type="number"
-                  min="1000"
+                  type="text"
+                  inputMode="numeric"
                   value={draftItemAmount}
-                  onChange={(e) => setDraftItemAmount(e.target.value)}
+                  onChange={(e) => setDraftItemAmount(formatRupiahInput(e.target.value))}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
@@ -4095,22 +4184,23 @@ export default function App() {
             <span id="budget-limit-hint" className="field-hint">
               {budgetDraftItems.length > 0
                 ? 'Otomatis menjumlahkan seluruh poin rincian di atas'
-                : 'Masukkan kuota maksimal bulan ini (contoh: 2000000)'}
+                : 'Ketik nominal kuota, format Rupiah akan otomatis terbentuk'}
             </span>
             <input
               id="budget-limit-input"
-              type="number"
+              type="text"
+              inputMode="numeric"
               required
-              min="1000"
               readOnly={budgetDraftItems.length > 0}
               value={
                 budgetDraftItems.length > 0
-                  ? String(budgetDraftItems.reduce((sum, item) => sum + item.amount, 0))
+                  ? formatRupiahInput(budgetDraftItems.reduce((sum, item) => sum + item.amount, 0))
                   : budgetLimitInput
               }
-              onChange={(e) => setBudgetLimitInput(e.target.value)}
+              onChange={(e) => setBudgetLimitInput(formatRupiahInput(e.target.value))}
               aria-describedby="budget-limit-hint"
               aria-errormessage="budget-limit-error"
+              placeholder="Contoh: Rp 2.000.000"
               className={`w-full rounded-xl border border-slate-200 px-4 py-2.5 text-base font-bold text-slate-900 focus:border-indigo-500 focus:outline-none ${
                 budgetDraftItems.length > 0 ? 'bg-slate-100 cursor-not-allowed' : ''
               }`}
@@ -4151,7 +4241,7 @@ export default function App() {
             {formatIDR(
               budgetDraftItems.length > 0
                 ? budgetDraftItems.reduce((sum, item) => sum + item.amount, 0)
-                : Number(budgetLimitInput) || 0
+                : parseRupiahInput(budgetLimitInput)
             )}
           </button>
         </form>
@@ -4262,9 +4352,11 @@ export default function App() {
                 Saldo Awal (Rp)
               </label>
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
                 value={walletInitialBalance}
-                onChange={(e) => setWalletInitialBalance(e.target.value)}
+                onChange={(e) => setWalletInitialBalance(formatRupiahInput(e.target.value, true))}
+                placeholder="Contoh: Rp 500.000"
                 className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm"
               />
             </div>
@@ -4524,17 +4616,18 @@ export default function App() {
               </span>
               <input
                 id="debt-total-input"
-                type="number"
+                type="text"
+                inputMode="numeric"
                 required
-                min="1000"
                 value={debtTotalInput}
                 onChange={(e) => {
-                  setDebtTotalInput(e.target.value);
-                  if (!debtInstallmentInput) setDebtInstallmentInput(e.target.value);
+                  const formatted = formatRupiahInput(e.target.value);
+                  setDebtTotalInput(formatted);
+                  if (!debtInstallmentInput) setDebtInstallmentInput(formatted);
                 }}
                 aria-describedby="debt-total-hint"
                 aria-errormessage="debt-total-error"
-                placeholder="Contoh: 3000000"
+                placeholder="Contoh: Rp 3.000.000"
                 className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-bold text-slate-900 focus:border-indigo-500 focus:outline-none"
               />
               <div id="debt-total-error" className="error-msg">
@@ -4554,13 +4647,13 @@ export default function App() {
               </span>
               <input
                 id="debt-installment-input"
-                type="number"
+                type="text"
+                inputMode="numeric"
                 required
-                min="1000"
                 value={debtInstallmentInput}
-                onChange={(e) => setDebtInstallmentInput(e.target.value)}
+                onChange={(e) => setDebtInstallmentInput(formatRupiahInput(e.target.value))}
                 aria-describedby="debt-installment-hint"
-                placeholder="Contoh: 500000"
+                placeholder="Contoh: Rp 500.000"
                 className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-bold text-slate-900 focus:border-indigo-500 focus:outline-none"
               />
             </div>
@@ -4692,13 +4785,13 @@ export default function App() {
               </span>
               <input
                 id="debt-pay-amount-input"
-                type="number"
+                type="text"
+                inputMode="numeric"
                 required
-                min="1"
-                max={selectedDebtForPay.remaining_amount}
                 value={debtPayAmountInput}
-                onChange={(e) => setDebtPayAmountInput(e.target.value)}
+                onChange={(e) => setDebtPayAmountInput(formatRupiahInput(e.target.value))}
                 aria-describedby="debt-pay-amount-hint"
+                placeholder="Contoh: Rp 500.000"
                 className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-base font-bold text-slate-900 focus:border-indigo-500 focus:outline-none"
               />
               <div className="flex gap-2 mt-2">
@@ -4706,7 +4799,7 @@ export default function App() {
                   type="button"
                   onClick={() =>
                     setDebtPayAmountInput(
-                      String(
+                      formatRupiahInput(
                         Math.min(
                           selectedDebtForPay.monthly_installment,
                           selectedDebtForPay.remaining_amount
@@ -4727,7 +4820,9 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setDebtPayAmountInput(String(selectedDebtForPay.remaining_amount))}
+                  onClick={() =>
+                    setDebtPayAmountInput(formatRupiahInput(selectedDebtForPay.remaining_amount))
+                  }
                   className="rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 px-2.5 py-1 text-xs font-semibold text-slate-700 cursor-pointer"
                 >
                   Lunasi Penuh ({formatIDR(selectedDebtForPay.remaining_amount)})
@@ -4767,8 +4862,8 @@ export default function App() {
               }`}
             >
               {selectedDebtForPay.direction === 'payable'
-                ? `Bayar Cicilan ${formatIDR(Number(debtPayAmountInput) || 0)}`
-                : `Terima Pelunasan ${formatIDR(Number(debtPayAmountInput) || 0)}`}
+                ? `Bayar Cicilan ${formatIDR(parseRupiahInput(debtPayAmountInput))}`
+                : `Terima Pelunasan ${formatIDR(parseRupiahInput(debtPayAmountInput))}`}
             </button>
           </form>
         )}
