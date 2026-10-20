@@ -28,10 +28,23 @@ body,
   background-color: light-dark(rgba(255, 255, 255, 0.85), rgba(17, 24, 39, 0.88)) !important;
 }
 
+.bg-slate-50\/50,
+.bg-slate-50\/60,
 .bg-slate-50\/70,
 .bg-slate-50\/80,
-.bg-slate-100 {
-  background-color: light-dark(#f1f5f9, #1e293b) !important;
+.bg-slate-100,
+.bg-slate-100\/70,
+.bg-slate-100\/80 {
+  background-color: light-dark(#f8fafc, #1e293b) !important;
+}
+
+.bg-slate-100\/90 {
+  background-color: light-dark(#f1f5f9, #0f172a) !important;
+}
+
+.hover\:bg-slate-100\/70:hover,
+.hover\:bg-slate-100:hover {
+  background-color: light-dark(#f1f5f9, #334155) !important;
 }
 
 .text-slate-900 {
@@ -76,6 +89,12 @@ body,
 .border-indigo-200\/80,
 .border-indigo-200\/60 {
   border-color: light-dark(#e0e7ff, rgba(99, 102, 241, 0.35)) !important;
+}
+
+.text-indigo-600,
+.text-indigo-700,
+.text-indigo-800 {
+  color: light-dark(#4338ca, #818cf8) !important;
 }
 
 .bg-violet-50,
@@ -147,8 +166,13 @@ body,
 }
 
 .border-amber-200,
+.border-amber-300,
 .border-amber-200\/90 {
-  border-color: light-dark(#fde68a, rgba(245, 158, 11, 0.35)) !important;
+  border-color: light-dark(#fde68a, rgba(245, 158, 11, 0.45)) !important;
+}
+
+.ring-amber-200 {
+  --tw-ring-color: light-dark(#fde68a, rgba(245, 158, 11, 0.35)) !important;
 }
 
 .text-amber-700,
@@ -156,7 +180,9 @@ body,
   color: light-dark(#b45309, #fcd34d) !important;
 }
 
-.divide-slate-100 > :not(:last-child) {
+.divide-slate-100 > :not(:last-child),
+.divide-slate-200 > :not(:last-child),
+.divide-slate-200\/70 > :not(:last-child) {
   border-color: light-dark(#f1f5f9, #1f2937) !important;
 }
 
